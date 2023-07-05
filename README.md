@@ -1,2 +1,2 @@
 # cnc
-CNC controller with tool radius compensation 
+CNC with tool radius compensation 
