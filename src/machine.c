@@ -228,7 +228,6 @@ machine_getter(data_t, rt_pacing);
 machine_getter(point_t *, zero);
 machine_getter(point_t *, setpoint);
 machine_getter(point_t *, position);
-//machine_getter(data_t *, tools);
 
 data_t machine_tool_radius(machine_t *m, data_t i){
   return m->tools[(int)i];
