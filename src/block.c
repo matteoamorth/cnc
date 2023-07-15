@@ -468,12 +468,13 @@ static int block_arc(block_t *b) {
 //trc evaluation 
 static block_type_t block_trc_evaluation(block_t *b, char *arg){
   block_type_t i = (block_type_t) atoi(arg);
-  switch (i){
+  switch ((int)i){
   case 41:
     b->trc = -1; break;
   case 42:
     b->trc = 1; break;
   default:
+    break;
   }
   return i;
 }

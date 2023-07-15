@@ -17,6 +17,7 @@
 //  |____/ \___|\___|_|\__,_|_|  \__,_|\__|_|\___/|_| |_|___/
 
 #define BUFLEN 1024
+#define MAX_TOOLS 5
 
 typedef struct machine {
   data_t A;                      // max acceleration/deceleration
@@ -34,7 +35,9 @@ typedef struct machine {
   struct mosquitto *mqt;         // mosquitto object
   struct mosquitto_message *msg; // mosquitto message structure
   int connecting;                // 1 when disconnected or about to connect
-  data_t rt_pacing;                 // real time scaling
+  data_t rt_pacing;              // real time scaling
+  data_t tools[MAX_TOOLS];       // tool radius
+  data_t tools_n;                //number of tools avaiable
 } machine_t;
 
 // Callbacks
@@ -72,6 +75,8 @@ machine_t *machine_new(char const *cfg_path) {
   m->offset = point_new();
   point_set_xyz(m->zero, 0, 0, 0);
   point_set_xyz(m->offset, 0, 0, 0);
+
+  m->tools_n = 0;
 
   // Import values form a INI file
   // 1. open the file
@@ -115,6 +120,7 @@ machine_t *machine_new(char const *cfg_path) {
   {
     toml_datum_t d;
     toml_array_t *point;
+    toml_array_t *tools_list;
     toml_table_t *ccnc = toml_table_in(conf, "C-CNC");
     if (!ccnc) {
       eprintf("Missing C-CNC section\n");
@@ -125,6 +131,7 @@ machine_t *machine_new(char const *cfg_path) {
     T_READ_D(d, m, ccnc, tq);
     T_READ_D(d, m, ccnc, fmax);
     T_READ_D(d, m, ccnc, rt_pacing);
+    T_READ_D(d, m, ccnc, tools_n);
     // WP origin
     point = toml_array_in(ccnc, "offset");
     if (!point) {
@@ -147,6 +154,22 @@ machine_t *machine_new(char const *cfg_path) {
         toml_double_at(point, 2).u.d
       );
     }
+
+    //extract tools, if missing close program 
+    tools_list = toml_array_in(ccnc, "tools");
+    if(!tools_list){  
+      eprintf("Could not find any tool!\n");
+      goto fail;
+    }
+
+    if(m->tools_n > MAX_TOOLS){
+      wprintf("Tools provided are more than the maximum allowed, the machine loads only the first %d elements", MAX_TOOLS);
+      m->tools_n = MAX_TOOLS;
+    }
+
+    for (size_t i = 0; i < m->tools_n; i++)
+      m->tools[i] = toml_double_at(tools_list,i).u.d;
+    
   }
   {
     toml_datum_t d;
@@ -205,7 +228,11 @@ machine_getter(data_t, rt_pacing);
 machine_getter(point_t *, zero);
 machine_getter(point_t *, setpoint);
 machine_getter(point_t *, position);
+//machine_getter(data_t *, tools);
 
+data_t machine_tool_radius(machine_t *m, data_t i){
+  return m->tools[(int)i];
+}
 
 // METHODS =====================================================================
 
