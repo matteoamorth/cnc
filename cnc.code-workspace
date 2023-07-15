@@ -1,0 +1,75 @@
+{
+  "folders": [
+    {
+      "path": "."
+    }
+  ],
+  "settings": {
+    "C_Cpp.default.defines": [
+      "STATS_MAIN=1",
+      "POINT_MAIN=1"
+    ],
+    "files.associations": {
+      "*.h": "c",
+      "*.rmd": "markdown",
+      "*.hh": "c++",
+      "__node_handle": "c",
+      "cmath": "c",
+      "complex": "c"
+    }
+  },
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "type": "lldb",
+        "request": "launch",
+        "name": "hello",
+        "program": "${workspaceFolder}/build/hello",
+        "args": [],
+        "cwd": "${workspaceFolder}/build"
+      },
+      {
+        "type": "lldb",
+        "request": "launch",
+        "name": "point",
+        "program": "${workspaceFolder}/build/point",
+        "args": [],
+        "cwd": "${workspaceFolder}/build"
+      },
+      {
+        "type": "lldb",
+        "request": "launch",
+        "name": "block",
+        "program": "${workspaceFolder}/build/block",
+        "args": ["machine.ini"],
+        "cwd": "${workspaceFolder}"
+      },
+      {
+        "type": "lldb",
+        "request": "launch",
+        "name": "program",
+        "program": "${workspaceFolder}/build/program",
+        "args": ["test.gcode", "machine.ini"],
+        "cwd": "${workspaceFolder}"
+      },
+      {
+        "type": "lldb",
+        "request": "launch",
+        "name": "ex1",
+        "program": "${workspaceFolder}/build/ex1",
+        "args": ["test.gcode", "10"],
+        "cwd": "${workspaceFolder}"
+      },
+      {
+        "type": "lldb",
+        "request": "launch",
+        "name": "axis",
+        "program": "${workspaceFolder}/build/axis",
+        "args": [],
+        "cwd": "${workspaceFolder}"
+      }
+    ],
+    "compounds": []
+  }
+}
