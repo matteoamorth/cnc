@@ -42,6 +42,7 @@ typedef struct block {
   data_t i, j, r;           // arc parameters
   data_t theta0, dtheta;    // initial and arc angles
   data_t acc;               // actual acceleration
+  data_t trc;               //tool radius compensation
   block_profile_t *prof;    // block velocity profile data
   machine_t const *machine; // machine object (holding config data)
   struct block *prev;
@@ -53,6 +54,7 @@ static point_t *start_point(block_t *b);
 static int block_set_fields(block_t *b, char cmd, char *argv);
 static void block_compute(block_t *b);
 static int block_arc(block_t *b);
+static block_type_t block_trc_evaluation(block_t *b, char *arg);
 
 //   _____                 _   _
 //  |  ___|   _ _ __   ___| |_(_) ___  _ __  ___
@@ -60,6 +62,7 @@ static int block_arc(block_t *b);
 //  |  _|| |_| | | | | (__| |_| | (_) | | | \__ \
 //  |_|   \__,_|_| |_|\___|\__|_|\___/|_| |_|___/
 //
+
 // LIFECYCLE ===================================================================
 block_t *block_new(char const *line, block_t *prev, machine_t const *machine) {
   assert(line);
@@ -77,6 +80,12 @@ block_t *block_new(char const *line, block_t *prev, machine_t const *machine) {
   } else { // this is the first block: set everything to 0
     memset(b, 0, sizeof(block_t));
   }
+
+  // inherit trc from previous block
+  if(prev)
+    b->trc = prev->trc;
+  else
+    b->trc = 0;
 
   // in any case all non-modal parameters are set to 0
   b->i = b->j = b->r = 0;
@@ -157,6 +166,7 @@ block_getter(data_t, r, r);
 block_getter(point_t *, center, center);
 block_getter(point_t *, target, target);
 block_getter(block_t *, next, next);
+block_getter(data_t,trc,trc);
 
 
 // METHODS =====================================================================
@@ -176,7 +186,7 @@ int block_parse(block_t *b) {
   // tokenization
   while ((word = strsep(&line, " ")) != NULL) {
     // word[0] is the first character (the command)
-    // word + 1 is the string beginning after the forst character
+    // word + 1 is the string beginning after the first character
     rv += block_set_fields(b, toupper(word[0]), word + 1);
   }
   free(tofree);
@@ -308,7 +318,7 @@ static int block_set_fields(block_t *b, char cmd, char *arg) {
     b->n = atol(arg);
     break;
   case 'G':
-    b->type = (block_type_t)atoi(arg);
+    b->type = block_trc_evaluation(b, arg);
     break;
   case 'X':
     point_set_x(b->target, atof(arg));
@@ -455,6 +465,18 @@ static int block_arc(block_t *b) {
   return 0;
 }
 
+//trc evaluation 
+static block_type_t block_trc_evaluation(block_t *b, char *arg){
+  block_type_t i = (block_type_t) atoi(arg);
+  switch (i){
+  case 41:
+    b->trc = -1; break;
+  case 42:
+    b->trc = 1; break;
+  default:
+  }
+  return i;
+}
 
 //   _____         _                     _
 //  |_   _|__  ___| |_   _ __ ___   __ _(_)_ __
