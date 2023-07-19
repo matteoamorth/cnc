@@ -96,3 +96,46 @@ data_t machine_tool_radius(machine_t *m, data_t i){
 }
 ```
 
+## Math functions 
+
+Given the equation of a generic line:
+
+$$ y = ax + b$$
+
+It is possible to evaluate the parameters $a$ and $b$ with these two equations:
+
+$$ a = {y_2 - y_1 \over x_2 - x_1}$$
+
+$$ b = {x_2 y_1 - x_1 y_2 \over x_2 - x_1} $$
+
+where initial point is $P_1(x_1, y_1)$ and final point is $P_2(x_2, y_2)$
+
+It is important to remember special cases: 
+- horizontal ($y_1 = y_2$).
+
+  $$ y = y_1$$ 
+
+- vertical ($x_1 = x_2$) 
+
+  $$ x = x_1$$ 
+
+The vertical case is a strange exception that must be considered in the code.
+
+Now the equation of line with offset can be evaluated:
+
+$$ y = ax + b ± \sqrt{a^2 +1}$$ 
+
+The sign before the square root can be defined through these points:
+ 
+- if we have the **left case** (`G41`), the sign will be **plus** when we move from left to right and from bottom to top*.
+- if we have the **right case** (`G42`), the sign will be **minus** when we move from left to right and from bottom to top*.
+
+*\* we assume that the `x` axis increases from left to right and the `y` axis increases from bottom to top.*
+
+Considering that the **direction** its known, thanks to the $a$ parameter of the line's equation, we **get the sign** just multiplying $a$ sign* with the offset type imposed by program (`G41` or `G42`). 
+
+*\* we must consider the special case with vertical line ($a = 0$).*
+
+  ```c
+  ```
+
