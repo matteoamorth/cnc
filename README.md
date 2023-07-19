@@ -134,7 +134,7 @@ The sign before the square root can be defined through these points:
 
 Considering that the **direction** its known, thanks to the $a$ parameter of the line's equation, we **get the sign** just multiplying $a$ sign* with the offset type imposed by program (`G41` or `G42`). 
 
-*\* we must consider the special case with vertical line $a = 0$ .*
+*\* we must consider the special case with vertical line* $a = 0$ .
 
   ```c
   ```
