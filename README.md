@@ -61,7 +61,7 @@ In order to make the program work, the file `machine.ini` must include `tools` l
 
 ```toml
 tools = [10.0, 2.5, 3.0, 4.0, 7.5]
-tools_n = 5;
+tools_n = 5
 ```
 
 Add `tools` list and number of tools avaiable `tools_n` in `machine` object:
@@ -113,11 +113,11 @@ where initial point is $P_1(x_1, y_1)$ and final point is $P_2(x_2, y_2)$
 It is important to remember special cases: 
 - horizontal ($y_1 = y_2$).
 
-  $$ y = y_1$$ 
+  $$y = y_1$$ 
 
 - vertical ($x_1 = x_2$) 
 
-  $$ x = x_1$$ 
+  $$x = x_1$$ 
 
 The vertical case is a strange exception that must be considered in the code.
 
@@ -134,7 +134,7 @@ The sign before the square root can be defined through these points:
 
 Considering that the **direction** its known, thanks to the $a$ parameter of the line's equation, we **get the sign** just multiplying $a$ sign* with the offset type imposed by program (`G41` or `G42`). 
 
-*\* we must consider the special case with vertical line ($a = 0$).*
+*\* we must consider the special case with vertical line $a = 0$ .*
 
   ```c
   ```
