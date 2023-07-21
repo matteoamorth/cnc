@@ -146,7 +146,7 @@ bool block_equation(data_t *a, data_t *b, point p_init, point p_final){
 
 ### Line equation through two points
 If we restart from the generic equation defined by two points:
-$$ {y-y_1 \over x-x_1} = {y_2-y_1 \over x_2-x_1}$$
+$${y-y_1 \over x-x_1} = {y_2-y_1 \over x_2-x_1}$$
 
 we can obtain this result:
 
