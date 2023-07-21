@@ -98,6 +98,7 @@ data_t machine_tool_radius(machine_t *m, data_t i){
 
 ## Math functions 
 
+### Generic line equation 
 Given the equation of a generic line:
 
 $$ y = ax + b$$
@@ -119,7 +120,65 @@ It is important to remember special cases:
 
   $$x = x_1$$ 
 
-The vertical case is a strange exception that must be considered in the code.
+The vertical case is a strange exception that must be considered in the code. 
+If the function `block_equation` returns a type (for example `bool`), we can return a special value that suggests we are in the vertical special case.
+```c
+bool block_equation(data_t *a, data_t *b, point p_init, point p_final){
+    bool vertical = false;
+    if(p_init->x == p_final->x){
+      vertical = true
+      b = p_init->x; 
+      a = 0;
+      return vertical;
+    }
+    
+//other cases
+    point *p_dist = point_new();
+    point_delta(p_init, p_final, p_dist);
+
+    a = p_dist-> y / p_dist->x;
+
+    b = (p_final->x * p_init->y - p_init->x * p_final->y) / p_dist->x;
+
+    return vertical;
+}
+```
+
+### Line equation through two points
+If we restart from the generic equation defined by two points:
+$$ {y-y_1 \over x-x_1} = {y_2-y_1 \over x_2-x_1}$$
+
+we can obtain this result:
+
+$$(y_1-y_2) * x + (x_2-x_1) * y + (x_1-x_2)*y_1 + (y_2-y_1)*x_1 = 0$$
+
+Now if we assume that:
+- $a_0 = y_1-y_2$
+- $b_0 = x_2-x_1$
+- $c_0 = (x_1-x_2)*y_1 + (y_2-y_1)*x_1$
+
+The equation will be:
+$$a_0 * x + b_0 * y + c_0 = 0$$
+
+Now, to evaluate $a$ and $b$ of the equation of line we can simply divide by $-b_0$:
+- $a = -{a_0 \over b_0}$
+- $b = -{c_0 \over b_0}$
+
+If $b_0 = 0$, the value of $b$ will be:
+$$b = -{c_0 \over a_0}$$
+
+In conclusion, we can create a function 
+
+```c
+void block_equation(data_t *a, data_t *b, data_t *c, point p_init, point p_final){
+    point p_dist = point_new();
+    point_delta(p_init, p_final, p_dist);
+    a = - p_dist->y;
+    b =   p_dist->x;
+    c = (- p_dist->x) * p_init->y + (p_dist->y) * p_init->y;
+    return;
+}
+```
 
 Now the equation of line with offset can be evaluated:
 
