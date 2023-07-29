@@ -219,6 +219,7 @@ int block_parse(block_t *b) {
         vertical1 = block_equation(&a2, &b2, start_point(b), block_target(b));
         int sign_trc = block_eq_sign(start_point(b->prev),block_target(b->prev), b->trc);
 
+
         b1 += sign_trc * tool_radius * sqrt(a1 * a1 + 1.0);
         b2 += sign_trc1 * tool_radius * sqrt(a2 * a2 + 1.0);
         //both not vertical
