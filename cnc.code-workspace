@@ -15,7 +15,9 @@
       "*.hh": "c++",
       "__node_handle": "c",
       "cmath": "c",
-      "complex": "c"
+      "complex": "c",
+      "span": "c",
+      "chrono": "c"
     }
   },
   "launch": {

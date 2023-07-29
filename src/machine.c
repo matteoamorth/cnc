@@ -229,7 +229,7 @@ machine_getter(point_t *, zero);
 machine_getter(point_t *, setpoint);
 machine_getter(point_t *, position);
 
-data_t machine_tool_radius(machine_t *m, data_t i){
+data_t machine_tool_radius(const machine_t *m, data_t i){
   return m->tools[(int)i];
 }
 

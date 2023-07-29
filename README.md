@@ -11,19 +11,21 @@ data_t trc;
 
 Added function `block_trc_evaluation` to set the `trc` field in `block_set_fields` function
 
-(to be checked with `block_parse` modification function later):
+(added `TRC_LEFT` and `TRC_RIGHT` to `block.h` file):
 ```C
 //trc evaluation 
 static block_type_t block_trc_evaluation(block_t *b, char *arg){
   block_type_t i = (block_type_t) atoi(arg);
-  switch (i){
+  switch ((int)i){
   case 41:
-    b->trc = -1; break;
+    b->trc = -1; return TRC_ON;
   case 42:
-    b->trc = 1; break;
+    b->trc = 1; return TRC_ON;
+  case 40:
+    b->trc = 0; return NO_TRC;
   default:
+    return i;
   }
-  return i;
 }
 ```
 
@@ -123,29 +125,32 @@ It is important to remember special cases:
 The vertical case is a strange exception that must be considered in the code. 
 If the function `block_equation` returns a type (for example `bool`), we can return a special value that suggests we are in the vertical special case.
 ```c
-bool block_equation(data_t *a, data_t *b, point p_init, point p_final){
-    bool vertical = false;
-    if(p_init->x == p_final->x){
-      vertical = true
-      b = p_init->x; 
-      a = 0;
-      return vertical;
-    }
-    
-//other cases
-    point *p_dist = point_new();
+static bool block_equation(data_t *a, data_t *b, point_t const *p_init, point_t const *p_final){
+  data_t temp_a, temp_b;
+  bool vertical = false;
+  if(point_x(p_init) == point_x(p_final)){
+    vertical = true;
+    temp_a = point_x(p_init);
+    temp_b = 0;
+
+  } else { //other cases
+
+    point_t *p_dist = point_new();
     point_delta(p_init, p_final, p_dist);
 
-    a = p_dist-> y / p_dist->x;
+    temp_a = point_y(p_dist) / point_x(p_dist);
+    temp_b = (point_x(p_final) * point_y(p_init) - point_x(p_init) * point_y(p_final)) / point_x(p_dist);
+  }
 
-    b = (p_final->x * p_init->y - p_init->x * p_final->y) / p_dist->x;
-
-    return vertical;
+  memcpy(a, &temp_a, sizeof(data_t));
+  memcpy(b, &temp_b, sizeof(data_t));
+  return vertical;
 }
 ```
 
 ### Line equation through two points
 If we restart from the generic equation defined by two points:
+
 $${y-y_1 \over x-x_1} = {y_2-y_1 \over x_2-x_1}$$
 
 we can obtain this result:

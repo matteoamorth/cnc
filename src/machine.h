@@ -41,6 +41,7 @@ data_t machine_rt_pacing(machine_t const *m);
 point_t *machine_zero(machine_t const *m);
 point_t *machine_setpoint(machine_t const *m);
 point_t *machine_position(machine_t const *m);
+data_t machine_tool_radius(const machine_t *m, data_t i);
 
 // Methods =====================================================================
 void machine_print_params(machine_t const *m);

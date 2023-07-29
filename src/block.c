@@ -55,6 +55,8 @@ static int block_set_fields(block_t *b, char cmd, char *argv);
 static void block_compute(block_t *b);
 static int block_arc(block_t *b);
 static block_type_t block_trc_evaluation(block_t *b, char *arg);
+static bool block_equation(data_t *a, data_t *b, point_t const *p_init, point_t const *p_final);
+static int block_eq_sign(point_t *from, point_t *to, data_t const trc);
 
 //   _____                 _   _
 //  |  ___|   _ _ __   ___| |_(_) ___  _ __  ___
@@ -191,6 +193,199 @@ int block_parse(block_t *b) {
   }
   free(tofree);
 
+  // trc 
+  //change target of the previous block if this has trc true
+
+  if((block_type(b) == TRC_ON) && (b->prev)){
+    data_t tool_radius = machine_tool_radius (b->machine, b->tool);
+
+    //line line case
+    bool vertical = false;
+    bool vertical1 = false;
+    data_t a1, a2, b1, b2, x, y;
+    point_t *p_new_target = point_new();
+
+    // three cases possible:
+    // - previous block is a line: we get the equation of the line and modify final point
+    // - previous block is an arc: we already have the equation of the arc and modify final point
+    // - previous block is something else: we only change the initial point of the current block
+    int sign_trc1 = block_eq_sign(start_point(b),block_target(b), b->trc);
+    switch (b->prev->type) {
+      //line - line case
+      
+      case LINE:
+        /* get equation from previous block */
+        vertical = block_equation(&a1, &b1, start_point(b->prev), block_target(b->prev));
+        vertical1 = block_equation(&a2, &b2, start_point(b), block_target(b));
+        int sign_trc = block_eq_sign(start_point(b->prev),block_target(b->prev), b->trc);
+
+        b1 += sign_trc * tool_radius * sqrt(a1 * a1 + 1.0);
+        b2 += sign_trc1 * tool_radius * sqrt(a2 * a2 + 1.0);
+        //both not vertical
+        if (!vertical && !vertical1){
+          
+          if(a1 != a2){
+            x = (b2 - b1) / (a1 - a2);
+            y = (b1 * a2 - b2 * a1) / (a2 - a1);
+          } else {  //collinear case
+            
+            if(a1 == 0){
+              // horizontal case
+              x = point_x(block_target(b->prev)); 
+              y = point_y(block_target(b->prev)) + sign_trc * tool_radius;
+            } else{
+
+              x = sign_trc * a1 / fabs(a1) * sqrt((a1 * a1) / (a1 * a1 + 1));
+              y = -x / a1;
+            }
+          }
+        } 
+
+        if(vertical && vertical1){
+          x = point_x(block_target(b->prev)) + sign_trc * tool_radius;
+          y = point_x(block_target(b->prev));
+        }
+
+        if(!vertical && vertical1){
+          x = point_x(block_target(b)) + sign_trc1 * tool_radius;
+          // y = m * x + q
+          y = a1 * x + b1;
+        }
+
+        if(vertical && !vertical1){
+          x = point_x(block_target(b->prev)) + sign_trc1 * tool_radius;
+          // y = m * x + q
+          y = a2 * x + b1;
+        }
+
+        point_set_x(p_new_target, x);
+        point_set_y(p_new_target, y);
+
+        //evaluate again previous block
+        block_compute(b->prev);
+      break;
+
+      // arc-> line case
+      // the arc has already the offset evaluation
+      case ARC_CCW:
+      case ARC_CW:
+        vertical1 = block_equation(&a2, &b2, start_point(b), block_target(b));
+        sign_trc1 = block_eq_sign(start_point(b),block_target(b), b->trc);
+        b2 += sign_trc1 * tool_radius * sqrt(a2 * a2 + 1.0);
+        point_t *center_point = block_center(b->prev);
+        point_t *p1 = point_new();
+        point_t *p2 = point_new();
+        data_t x1, x2, y1, y2;
+
+        if(vertical1){
+          x = point_x(block_target(b)) + sign_trc1 * tool_radius;
+          
+          point_set_x(p1, x);
+          point_set_x(p2, x);
+
+          // y = yc +- sqrt(r - (x-xc)^2)
+          y1 = point_y(center_point) + sqrt(block_r(b->prev) - pow(x - point_x(center_point),2));
+          y2 = point_y(center_point) + sqrt(block_r(b->prev) - pow(x - point_x(center_point),2));
+
+          point_set_y(p1, y1);
+          point_set_y(p2, y2);
+          
+          y1 = point_dist(b->prev->target, p1);
+          y2 = point_dist(b->prev->target, p2);
+
+          p_new_target = y1 < y2 ? p1 : p2;
+
+
+        } else if(a2 == 0){ //horizontal line case 
+          y = point_y(block_target(b)) + sign_trc1 * tool_radius;
+          
+          x1 = point_x(center_point) + sqrt(block_r(b->prev) - pow(y - point_y(center_point),2));
+          x2 = point_x(center_point) + sqrt(block_r(b->prev) - pow(y - point_y(center_point),2));
+
+          point_set_x(p1, x1);
+          point_set_x(p2, x2);
+          
+          x1 = point_dist(b->prev->target, p1);
+          x2 = point_dist(b->prev->target, p2);
+
+          p_new_target = x1 < x2 ? p1 : p2;
+        } else { // generic case 
+
+        /* mathematical computation
+        With the formula x = (-b +- sqrt(b^2 - 4 * a * c))/ (2 * a) there are two possible solutions
+        
+        */
+
+        data_t A = pow(a2, 2) -1;
+        data_t B = 2 * (a2 * (b2 - point_y(center_point)) - point_x(center_point));
+        data_t C = - pow(tool_radius, 2) + pow(point_x(center_point), 2) + pow((b2 - point_x(center_point)), 2);
+
+        x1 = (-B + sqrt(pow(B,2) - 4 * A * C)) / 2 * A;
+        x2 = (-B - sqrt(pow(B,2) - 4 * A * C)) / 2 * A;
+
+        y1 = a2 * x1 + b2;
+        y2 = a2 * x2 + b2;
+
+
+
+
+        }
+
+
+        //at the end of the arc case
+        if (block_arc(b)) {
+        wprintf("Could not calculate arc coordinates\n");
+        rv++;
+        return rv;
+        }
+      break;
+
+
+    default:
+      break;
+    }
+
+    // Block types:
+typedef enum {
+  RAPID = 0,
+  LINE,
+  ARC_CW,
+  ARC_CCW,
+  NO_MOTION,
+  NO_TRC,
+  TRC_ON,
+} block_type_t;
+
+      
+
+      if(vertical && !vertical1){
+        
+        point_set_x(p_new_target, a1);
+        y = a2 * a1;
+
+      }
+
+
+
+  }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   // inherit coordinates from previous point
   p0 = start_point(b);
   point_modal(p0, b->target);
@@ -202,12 +397,12 @@ int block_parse(block_t *b) {
   case LINE:
     b->acc = machine_A(b->machine);
     b->arc_feedrate = b->feedrate;
-    block_compute(b);
+    //block_compute(b); it will be done in the next block
     break;
 
   case ARC_CW:
   case ARC_CCW:
-    if (block_arc(b)) {
+     if (block_arc(b)) {
       wprintf("Could not calculate arc coordinates\n");
       rv++;
       break;
@@ -470,13 +665,81 @@ static block_type_t block_trc_evaluation(block_t *b, char *arg){
   block_type_t i = (block_type_t) atoi(arg);
   switch ((int)i){
   case 41:
-    b->trc = -1; break;
+    b->trc = -1; return TRC_ON;
   case 42:
-    b->trc = 1; break;
+    b->trc = 1; return TRC_ON;
+  case 40:
+    b->trc = 0; return NO_TRC;
   default:
-    break;
+    return i;
   }
-  return i;
+}
+
+/**
+ * Returns the equation of the block when it is a line:
+ *  y = a*x + b
+ *
+ * @param a is the coefficient of x
+ * @param b is the free term
+ * @param p_init is the initial point of the line
+ * @param p_final is the final point of the line
+ * 
+ * @return if the equation is the special case x = a, if TRUE, the equation is x = a
+ * 
+ * @if TRUE, the equation is x = a
+ * 
+ */
+static bool block_equation(data_t *a, data_t *b, point_t const *p_init, point_t const *p_final){
+  data_t temp_a, temp_b;
+  bool vertical = false;
+  if(point_x(p_init) == point_x(p_final)){
+    vertical = true;
+    temp_a = point_x(p_init);
+    temp_b = 0;
+
+  } else { 
+    //other cases
+    point_t *p_dist = point_new();
+    point_delta(p_init, p_final, p_dist);
+
+    temp_a = point_y(p_dist) / point_x(p_dist);
+    temp_b = (point_x(p_final) * point_y(p_init) - point_x(p_init) * point_y(p_final)) / point_x(p_dist);
+  }
+
+  memcpy(a, &temp_a, sizeof(data_t));
+  memcpy(b, &temp_b, sizeof(data_t));
+  return vertical;
+}
+
+/**
+ * 
+ * Evaluate the sign of the equation of the line through two points
+ * 
+ * @param from is the starting point
+ * @param to is the final point
+ * @param trc is the tool radius compensation of the block 
+ * 
+ * @return if we have to add or subtract the quatity for tool radius compensation
+ * 
+*/
+static int block_eq_sign(point_t *from, point_t *to, data_t const trc){
+
+  // if trc = 1  => right 
+  // if trc = 0  => no
+  // if trc = -1 => left
+  point_t *p_dist = point_new();
+  point_delta(from, to, p_dist);
+
+  if(point_x(p_dist) > 0 && point_y(p_dist) > 0) return -trc;
+  if(point_x(p_dist) < 0 && point_y(p_dist) > 0) return trc;
+  if(point_x(p_dist) > 0 && point_y(p_dist) < 0) return -trc;
+  if(point_x(p_dist) < 0 && point_y(p_dist) < 0) return trc;
+  return 0;
+
+}
+  
+static data_t block_angle_with_prev(){
+  return 1.0;
 }
 
 //   _____         _                     _
