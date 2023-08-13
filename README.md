@@ -13,7 +13,6 @@ Added function `block_trc_evaluation` to set the `trc` field in `block_set_field
 
 (added `TRC_LEFT` and `TRC_RIGHT` to `block.h` file):
 ```C
-//trc evaluation 
 static block_type_t block_trc_evaluation(block_t *b, char *arg){
   block_type_t i = (block_type_t) atoi(arg);
   switch ((int)i){
@@ -133,8 +132,8 @@ static bool block_equation(data_t *a, data_t *b, point_t const *p_init, point_t 
     temp_a = point_x(p_init);
     temp_b = 0;
 
-  } else { //other cases
-
+  } else { 
+    //other cases
     point_t *p_dist = point_new();
     point_delta(p_init, p_final, p_dist);
 
@@ -148,7 +147,7 @@ static bool block_equation(data_t *a, data_t *b, point_t const *p_init, point_t 
 }
 ```
 
-### Line equation through two points
+### Line equation through two points (not used)
 If we restart from the generic equation defined by two points:
 
 $${y-y_1 \over x-x_1} = {y_2-y_1 \over x_2-x_1}$$
@@ -198,8 +197,25 @@ The sign before the square root can be defined through these points:
 
 Considering that the **direction** its known, thanks to the $a$ parameter of the line's equation, we **get the sign** just multiplying $a$ sign* with the offset type imposed by program (`G41` or `G42`). 
 
-*\* we must consider the special case with vertical line* $a = 0$ .
+The function `block_eq_sign` is designed to provide the sign
 
   ```c
+  static int block_eq_sign(point_t *from, point_t *to, data_t const trc){
+
+  // if trc = 1  => right 
+  // if trc = 0  => no
+  // if trc = -1 => left
+  point_t *p_dist = point_new();
+  point_delta(from, to, p_dist);
+
+  if((point_x(p_dist) > 0) && (point_y(p_dist) >= 0)) return -trc;
+  if((point_x(p_dist) <= 0) && (point_y(p_dist) >= 0)) return trc;
+  if((point_x(p_dist) >= 0) && (point_y(p_dist) <  0)) return -trc;
+  if((point_x(p_dist) < 0) && (point_y(p_dist) < 0)) return trc;
+
+  return 0;
+
+  }
   ```
+
 
