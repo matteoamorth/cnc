@@ -47,6 +47,10 @@ typedef struct block {
   machine_t const *machine; // machine object (holding config data)
   struct block *prev;
   struct block *next;
+
+  // custom add-on
+  point_t *initial_point; //initial target of this block
+
 } block_t;
 
 // STATIC FUNCTIONS
@@ -141,7 +145,7 @@ void block_free(block_t *b) {
 void block_print(block_t *b, FILE *out) {
   assert(b && out);
   char *start = NULL, *end = NULL;
-  point_t *p0 = start_point(b);
+  point_t *p0 = block_initial_point(b);
   point_inspect(p0, &start);
   point_inspect(b->target, &end);
   fprintf(out, "%03lu %s->%s F%7.1f S%7.1f T%2lu (G%02d)\n", b->n, start, end,
@@ -169,6 +173,7 @@ block_getter(point_t *, center, center);
 block_getter(point_t *, target, target);
 block_getter(block_t *, next, next);
 block_getter(data_t,trc,trc);
+block_getter(point_t *, initial_point, initial_point);
 
 
 // METHODS =====================================================================
@@ -196,9 +201,17 @@ int block_parse(block_t *b) {
 
   // inherit coordinates from previous point
   p0 = start_point(b);
+
+  point_set_x(b->initial_point, point_x(p0));
+  point_set_y(b->initial_point, point_x(p0));
+  point_set_z(b->initial_point, point_z(p0));
+
+
   point_modal(p0, b->target);
   point_delta(p0, b->target, b->delta);
   b->length = point_dist(p0, b->target);
+
+
   // trc 
   //change target of the previous block if this has trc true
 
@@ -217,15 +230,15 @@ int block_parse(block_t *b) {
     // - previous block is something else: we only change the initial point of the current block
 
     //sign for trc - 2nd block
-    int sign_trc1 = block_eq_sign(start_point(b),block_target(b), b->trc);
+    int sign_trc1 = block_eq_sign(block_initial_point(b),block_target(b), b->trc);
     switch (b->prev->type) {
       //line - line case
       
       case LINE:
         /* get equation from previous block */
-        vertical = block_equation(&a1, &b1, start_point(b->prev), block_target(b->prev));
-        vertical1 = block_equation(&a2, &b2, start_point(b), block_target(b));
-        int sign_trc = block_eq_sign(start_point(b->prev),block_target(b->prev), b->trc);
+        vertical = block_equation(&a1, &b1, block_initial_point(b->prev), block_target(b->prev));
+        vertical1 = block_equation(&a2, &b2, block_initial_point(b), block_target(b));
+        int sign_trc = block_eq_sign(block_initial_point(b->prev),block_target(b->prev), b->trc);
 
         //does not affect the vertical lines
         b1 += sign_trc * tool_radius * sqrt(a1 * a1 + 1.0);
@@ -275,7 +288,7 @@ int block_parse(block_t *b) {
 
         // evaluate previous block - > must edit also the starting point 
         // because it is not inherited when it is modified in trc evaluation
-        p0 = start_point(b->prev);
+        p0 = block_initial_point(b->prev);
         point_modal(p0, b->prev->target);
 
         //new target point of previous block 
@@ -319,8 +332,8 @@ int block_parse(block_t *b) {
         
 
 
-        vertical1 = block_equation(&a2, &b2, start_point(b), block_target(b));
-        sign_trc1 = block_eq_sign(start_point(b),block_target(b), b->trc);
+        vertical1 = block_equation(&a2, &b2, block_initial_point(b), block_target(b));
+        sign_trc1 = block_eq_sign(block_initial_point(b),block_target(b), b->trc);
         b2 += sign_trc1 * tool_radius * sqrt(a2 * a2 + 1.0);
         point_t *center_point = block_center(b->prev);
         point_t *p1 = point_new();
@@ -380,7 +393,7 @@ int block_parse(block_t *b) {
 
         }
 
-        p0 = start_point(b->prev);
+        p0 = block_initial_point(b->prev);
         point_modal(p0, b->prev->target);
 
         //new target point of the arc block 
@@ -497,7 +510,7 @@ data_t block_lambda(block_t *b, data_t t, data_t *v) {
 point_t *block_interpolate(block_t *b, data_t lambda) {
   assert(b);
   point_t *result = machine_setpoint(b->machine);
-  point_t *p0 = start_point(b);
+  point_t *p0 = block_initial_point(b);
 
   // Parametric equations of segment:
   // x(t) = x(0) + d_x * lambda
