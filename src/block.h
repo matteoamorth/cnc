@@ -57,6 +57,7 @@ size_t block_n(block_t const *b);
 point_t *block_center(block_t const *b);
 block_t *block_next(block_t const *b);
 point_t *block_target(block_t const *b);
+point_t *block_initial_point(block_t const *b);
 
 
 

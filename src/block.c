@@ -139,6 +139,8 @@ void block_free(block_t *b) {
     point_free(b->delta);
   if (b->center)
     point_free(b->center);
+  if (b->initial_point)
+    point_free(b->initial_point);
   free(b);
 }
 
@@ -205,7 +207,6 @@ int block_parse(block_t *b) {
   point_set_x(b->initial_point, point_x(p0));
   point_set_y(b->initial_point, point_x(p0));
   point_set_z(b->initial_point, point_z(p0));
-
 
   point_modal(p0, b->target);
   point_delta(p0, b->target, b->delta);
@@ -284,10 +285,14 @@ int block_parse(block_t *b) {
           y = point_x(block_target(b->prev));
         }
 
-        
-
         // evaluate previous block - > must edit also the starting point 
         // because it is not inherited when it is modified in trc evaluation
+
+        p0 = start_point(b->prev);
+
+        point_set_x (b->prev->initial_point, point_x(block_initial_point(b->prev)));
+        point_set_y (b->prev->initial_point, point_y(block_initial_point(b->prev)));
+
         p0 = block_initial_point(b->prev);
         point_modal(p0, b->prev->target);
 
@@ -330,8 +335,6 @@ int block_parse(block_t *b) {
         if (b->prev->type == ARC_CW)
           b->prev->r -= b->prev->trc * tool_radius;
         
-
-
         vertical1 = block_equation(&a2, &b2, block_initial_point(b), block_target(b));
         sign_trc1 = block_eq_sign(block_initial_point(b),block_target(b), b->trc);
         b2 += sign_trc1 * tool_radius * sqrt(a2 * a2 + 1.0);
@@ -378,8 +381,8 @@ int block_parse(block_t *b) {
         x1 = (-B + sqrt(pow(B,2) - 4 * A * C)) / 2 * A;
         x2 = (-B - sqrt(pow(B,2) - 4 * A * C)) / 2 * A;
 
-        point_set_x(p1, x);
-        point_set_x(p2, x);
+        point_set_x(p1, x1);
+        point_set_x(p2, x2);
 
         // use eq of line to find y
         y1 = a2 * x1 + b2;
