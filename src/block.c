@@ -58,7 +58,7 @@ static point_t *start_point(block_t *b);
 static int block_set_fields(block_t *b, char cmd, char *argv);
 static void block_compute(block_t *b);
 static int block_arc(block_t *b);
-static int block_trc_evaluation(block_t *b, char *arg);
+static block_type_t block_trc_evaluation(block_t *b, char *arg);
 static bool block_equation(data_t *a, data_t *b, point_t const *p_init, point_t const *p_final);
 static int block_eq_sign(point_t *from, point_t *to, data_t const trc);
 static point_t *intersection_arc_line(block_t *b_arc, block_t *b_line, point_t const *target, bool change_radius);
@@ -110,6 +110,8 @@ block_t *block_new(char const *line, block_t *prev, machine_t const *machine) {
     eprintf("Could not allocate memory for block profile\n");
     goto fail;
   }
+
+  b->initial_point = point_new();
   b->target = point_new();
   b->delta = point_new();
   b->center = point_new();
@@ -179,7 +181,6 @@ block_getter(block_t *, next, next);
 block_getter(data_t,trc,trc);
 block_getter(point_t *, initial_point, initial_point);
 
-
 // METHODS =====================================================================
 
 // we have a G-code line like "N10 G01 X0 Y100  z210.5 F1000 S5000"
@@ -210,14 +211,9 @@ int block_parse(block_t *b) {
   b->length = point_dist(p0, b->target);
 
   // trc evaluation
-  if((block_trc(b->prev) != 0) && (b->prev)){
+  if(b->prev)
+  if((block_trc(b->prev) == 1) || (block_trc(b->prev) == -1)){
     point_t *p_new_target = point_new();
-
-    // four cases possible:
-    // - previous block is a line, current block is a line
-    // - previous block is a line, current block is an arc
-    // - previous block is an arc, current block is a line
-    // - previous block is something else
     
     switch (block_type(b->prev)) {
       case LINE:
@@ -225,8 +221,8 @@ int block_parse(block_t *b) {
         b->prev->acc = machine_A(b->machine);
         b->prev->arc_feedrate = b->feedrate;
 
-        // line -> line 
-        if (block_type(b) == LINE){
+        // line -> line / rapid
+        if ((block_type(b) == LINE) || (block_type(b) == RAPID)){
 
           // find intersection point and set as new target point
           p_new_target = intersection_line_line (b->prev, b);
@@ -269,11 +265,6 @@ int block_parse(block_t *b) {
           break;
         }
 
-        // line -> none
-        if ((block_type(b) == NO_MOTION) || (block_type(b) == RAPID)){
-          //coming soon
-        }
-
       break;
 
       case ARC_CCW:
@@ -287,8 +278,8 @@ int block_parse(block_t *b) {
         b->prev->acc = machine_A(b->prev->machine) / 2.0;
         b->prev->arc_feedrate = MIN( b->prev->feedrate, pow(3.0 / 4.0 * pow(machine_A(b->prev->machine), 2) * pow(b->prev->r, 2), 0.25) * 60);
 
-        // arc -> line
-        if(block_type(b->prev) == LINE){
+        // arc -> line / rapid
+        if((block_type(b) == LINE) || (block_type(b) == RAPID)){
           
           // find intersection point and set it as new target point
           p_new_target = intersection_arc_line(b->prev, b, block_target(b->prev), true);
@@ -307,23 +298,51 @@ int block_parse(block_t *b) {
 
           b->prev->arc_feedrate = MIN( b->prev->feedrate, pow(3.0 / 4.0 * pow(machine_A(b->prev->machine), 2) * pow(b->prev->r, 2), 0.25) * 60);
           block_compute(b->prev);
-          break;
+          return rv;
+        }
+      break;
+
+      case RAPID:
+        if(block_type(b) == LINE){
+          p_new_target = intersection_line_line(b->prev, b);
+
+          point_set_x(block_target(b->prev), point_x(p_new_target));
+          point_set_y(block_target(b->prev), point_y(p_new_target));
+
+          // update initial point of prev block
+          point_set_x (block_initial_point(b->prev), point_x(start_point(b->prev)));
+          point_set_y (block_initial_point(b->prev), point_y(start_point(b->prev)));
+          return rv;
         }
 
-        // arc -> none
-        if((block_type(b) == NO_MOTION) || (block_type(b) == RAPID)){
-          //coming soon
+        if ((block_type(b) == ARC_CCW) || (block_type(b) == ARC_CW)){
+          if (block_arc(b)) {
+            wprintf("Could not calculate arc coordinates\n");
+            rv++;
+            return rv;
+          }
+          
+          p_new_target = intersection_arc_line(b, b->prev, block_target(b->prev), false);
+
+          // need to change only the final point of rapid block
+          point_set_x(block_target(b->prev), point_x(p_new_target));
+          point_set_y(block_target(b->prev), point_y(p_new_target));
+
+          // update initial point of prev block
+          point_set_x (block_initial_point(b->prev), point_x(start_point(b->prev)));
+          point_set_y (block_initial_point(b->prev), point_y(start_point(b->prev)));
+          return rv;
         }
 
       break;
 
-    default:
+      default:
       break;
     }
-
+    return rv;
   }
 
-  // no trc
+  // no trc - original block_parse() function
   switch (b->type) {
   case LINE:
     b->acc = machine_A(b->machine);
@@ -411,6 +430,7 @@ point_t *block_interpolate(block_t *b, data_t lambda) {
   return result;
 }
 
+// Static functions
 //   ____  _        _   _         __                  _   _
 //  / ___|| |_ __ _| |_(_) ___   / _|_   _ _ __   ___| |_(_) ___  _ __  ___
 //  \___ \| __/ _` | __| |/ __| | |_| | | | '_ \ / __| __| |/ _ \| '_ \/ __|
@@ -431,7 +451,7 @@ static int block_set_fields(block_t *b, char cmd, char *arg) {
     b->n = atol(arg);
     break;
   case 'G':
-    b->trc = block_trc_evaluation(b, arg);
+    b->type = block_trc_evaluation(b, arg);
     break;
   case 'X':
     point_set_x(b->target, atof(arg));
@@ -525,7 +545,7 @@ static void block_compute(block_t *b) {
 // see slides pages 107-109
 static int block_arc(block_t *b) {
   data_t x0, y0, z0, xc, yc, xf, yf, zf, r;
-  point_t *p0 = start_point(b);
+  point_t *p0 = block_initial_point(b);
   x0 = point_x(p0);
   y0 = point_y(p0);
   z0 = point_z(p0);
@@ -578,19 +598,17 @@ static int block_arc(block_t *b) {
   return 0;
 }
 
-//trc evaluation 
-static int block_trc_evaluation(block_t *b, char *arg){
-  int i =  atoi(arg);
-  switch (i){
-  case 41:
-    return -1;
-  case 42:
-    return 1;
-  case 40:
-    return 0;
-  default:
-    return i;
-  }
+/**
+ * Set value of trc and return the block type
+ * 
+ * @param b block to be analyzed
+ * @param arg char with GCODE of trc
+ * 
+ * @return the block type
+*/
+static block_type_t block_trc_evaluation(block_t *b, char *arg){
+  b->trc = (atoi(arg) == 41) ? (-1) : ((atoi(arg) == 42) ? 1 : 0);
+  return (block_type_t) atoi(arg);
 }
 
 /**
@@ -637,7 +655,7 @@ static bool block_equation(data_t *a, data_t *b, point_t const *p_init, point_t 
  * @param to is the final point
  * @param trc is the tool radius compensation of the block 
  * 
- * @return if we have to add or subtract the quatity for tool radius compensation
+ * @return if we have to add or subtract the quatity for tool radius compensation (+-1)
  * 
 */
 static int block_eq_sign(point_t *from, point_t *to, data_t const trc){
@@ -837,11 +855,11 @@ static point_t *intersection_line_line(block_t *b_line1, block_t *b_line2){
   return p_new_target;
 }
 
-
 //static data_t block_angle_with_prev(){
 //  return 1.0;
 //}
 
+// MAIN
 //   _____         _                     _
 //  |_   _|__  ___| |_   _ __ ___   __ _(_)_ __
 //    | |/ _ \/ __| __| | '_ ` _ \ / _` | | '_ \
