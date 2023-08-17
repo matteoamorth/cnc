@@ -29,9 +29,7 @@ typedef enum {
   LINE,
   ARC_CW,
   ARC_CCW,
-  NO_MOTION,
-  NO_TRC,
-  TRC_ON,
+  NO_MOTION
 } block_type_t;
 
 //   _____                 _   _                 

@@ -58,9 +58,11 @@ static point_t *start_point(block_t *b);
 static int block_set_fields(block_t *b, char cmd, char *argv);
 static void block_compute(block_t *b);
 static int block_arc(block_t *b);
-static block_type_t block_trc_evaluation(block_t *b, char *arg);
+static int block_trc_evaluation(block_t *b, char *arg);
 static bool block_equation(data_t *a, data_t *b, point_t const *p_init, point_t const *p_final);
 static int block_eq_sign(point_t *from, point_t *to, data_t const trc);
+static point_t *intersection_arc_line(block_t *b_arc, block_t *b_line, point_t const *target, bool change_radius);
+static point_t *intersection_line_line(block_t *b_line1, block_t *b_line2);
 
 //   _____                 _   _
 //  |  ___|   _ _ __   ___| |_(_) ___  _ __  ___
@@ -200,250 +202,133 @@ int block_parse(block_t *b) {
   }
   free(tofree);
 
-
   // inherit coordinates from previous point
   p0 = start_point(b);
-
-  point_set_x(b->initial_point, point_x(p0));
-  point_set_y(b->initial_point, point_x(p0));
-  point_set_z(b->initial_point, point_z(p0));
-
+  point_modal(p0, b->initial_point);
   point_modal(p0, b->target);
   point_delta(p0, b->target, b->delta);
   b->length = point_dist(p0, b->target);
 
-
-  // trc 
-  //change target of the previous block if this has trc true
-
-  if((block_type(b) == TRC_ON) && (b->prev)){
-    data_t tool_radius = machine_tool_radius (b->machine, b->tool);
-
-    //line line case
-    bool vertical = false;
-    bool vertical1 = false;
-    data_t a1, a2, b1, b2, x, y;
+  // trc evaluation
+  if((block_trc(b->prev) != 0) && (b->prev)){
     point_t *p_new_target = point_new();
 
-    // three cases possible:
-    // - previous block is a line: we get the equation of the line and modify final point
-    // - previous block is an arc: we already have the equation of the arc and modify final point
-    // - previous block is something else: we only change the initial point of the current block
-
-    //sign for trc - 2nd block
-    int sign_trc1 = block_eq_sign(block_initial_point(b),block_target(b), b->trc);
-    switch (b->prev->type) {
-      //line - line case
-      
+    // four cases possible:
+    // - previous block is a line, current block is a line
+    // - previous block is a line, current block is an arc
+    // - previous block is an arc, current block is a line
+    // - previous block is something else
+    
+    switch (block_type(b->prev)) {
       case LINE:
-        /* get equation from previous block */
-        vertical = block_equation(&a1, &b1, block_initial_point(b->prev), block_target(b->prev));
-        vertical1 = block_equation(&a2, &b2, block_initial_point(b), block_target(b));
-        int sign_trc = block_eq_sign(block_initial_point(b->prev),block_target(b->prev), b->trc);
+        //set common parameters
+        b->prev->acc = machine_A(b->machine);
+        b->prev->arc_feedrate = b->feedrate;
 
-        //does not affect the vertical lines
-        b1 += sign_trc * tool_radius * sqrt(a1 * a1 + 1.0);
-        b2 += sign_trc1 * tool_radius * sqrt(a2 * a2 + 1.0);
+        // line -> line 
+        if (block_type(b) == LINE){
 
-        // both not vertical
-        if (!vertical && !vertical1){
-          
-          if(a1 != a2){
-            x = (b2 - b1) / (a1 - a2);
-            y = (b1 * a2 - b2 * a1) / (a2 - a1);
+          // find intersection point and set as new target point
+          p_new_target = intersection_line_line (b->prev, b);
 
-          } else {  //collinear case
-            
-            if(a1 == 0){
-              // horizontal case
-              x = point_x(block_target(b->prev)); 
-              y = point_y(block_target(b->prev)) + sign_trc * tool_radius;
+          point_set_x(block_target(b->prev), point_x(p_new_target));
+          point_set_y(block_target(b->prev), point_y(p_new_target));
 
-            } else{
+          // update initial point of prev block
+          point_set_x (block_initial_point(b->prev), point_x(start_point(b->prev)));
+          point_set_y (block_initial_point(b->prev), point_y(start_point(b->prev)));
 
-              x = sign_trc * a1 / fabs(a1) * sqrt((a1 * a1) / (a1 * a1 + 1));
-              y = -x / a1;
-            }
-          }
-        } 
+          //evaluation
+          p0 = start_point(b->prev);
+          point_delta(p0, b->prev->target, b->prev->delta);
+          b->prev->length = point_dist(p0, b->prev->target);
 
-        if(!vertical && vertical1){
-          x = point_x(block_target(b)) + sign_trc1 * tool_radius;
-          // y = m * x + q
-          y = a1 * x + b1;
-        }
-
-        if(vertical && !vertical1){
-          x = point_x(block_target(b->prev)) + sign_trc1 * tool_radius;
-          // y = m * x + q
-          y = a2 * x + b2;
-        }
-
-        // both vertical
-        if(vertical && vertical1){
-          x = point_x(block_target(b->prev)) + sign_trc * tool_radius;
-          y = point_x(block_target(b->prev));
-        }
-
-        // evaluate previous block - > must edit also the starting point 
-        // because it is not inherited when it is modified in trc evaluation
-
-        p0 = start_point(b->prev);
-
-        point_set_x (b->prev->initial_point, point_x(block_initial_point(b->prev)));
-        point_set_y (b->prev->initial_point, point_y(block_initial_point(b->prev)));
-
-        p0 = block_initial_point(b->prev);
-        point_modal(p0, b->prev->target);
-
-        //new target point of previous block 
-        point_set_x(block_target(b->prev), x);
-        point_set_y(block_target(b->prev), y);
-
-        //evaluation
-        point_delta(p0, b->prev->target, b->prev->delta);
-        b->prev->length = point_dist(p0, b->prev->target);
-        block_compute(b->prev);
-
-      break;
-
-      // arc-> line case
-      //
-      case ARC_CCW:
-      case ARC_CW:
-        if (block_arc(b->prev)) {
-          wprintf("Could not calculate arc coordinates\n");
-          rv++;
+          //compute block after changes
+          block_compute(b->prev);
           break;
         }
-        b->prev->acc = machine_A(b->prev->machine) / 2.0;
-        b->prev->arc_feedrate = MIN( b->prev->feedrate,
-                               pow(3.0 / 4.0 * pow(machine_A(b->prev->machine), 2) * pow(b->prev->r, 2), 0.25) * 60);
 
-        
-        // trc reduces or increses the radius of the arc
-        
-        // sign(r+-r_tool) |    CW       |   CCW
-        // --------------------------------------------
-        // RIGHT TRC (+1)  | r - r_tool  | r - r_tool
-        // LEFT  TRC (+1)  | r + r_tool  | r + r_tool  
-        
-        // change radius
-        if (b->prev->type == ARC_CCW)
-          b->prev->r += b->prev->trc * tool_radius;
-        
-        if (b->prev->type == ARC_CW)
-          b->prev->r -= b->prev->trc * tool_radius;
-        
-        vertical1 = block_equation(&a2, &b2, block_initial_point(b), block_target(b));
-        sign_trc1 = block_eq_sign(block_initial_point(b),block_target(b), b->trc);
-        b2 += sign_trc1 * tool_radius * sqrt(a2 * a2 + 1.0);
-        point_t *center_point = block_center(b->prev);
-        point_t *p1 = point_new();
-        point_t *p2 = point_new();
-        data_t x1, x2, y1, y2;
-
-        if(vertical1){
-          x = point_x(block_target(b)) + sign_trc1 * tool_radius;
+        // line -> arc 
+        if ((block_type(b) == ARC_CCW) || (block_type(b) == ARC_CW)){
+          if (block_arc(b)) {
+            wprintf("Could not calculate arc coordinates\n");
+            rv++;
+            return rv;
+          }
           
-          point_set_x(p1, x);
-          point_set_x(p2, x);
+          // find intersection point and set it as new target point
+          p_new_target = intersection_arc_line(b, b->prev, block_target(b->prev), false);
+          point_set_x(block_target(b->prev), point_x(p_new_target));
+          point_set_y(block_target(b->prev), point_y(p_new_target));
 
-          // y = yc +- sqrt(r - (x-xc)^2)
-          y1 = point_y(center_point) + sqrt(block_r(b->prev) - pow(x - point_x(center_point),2));
-          y2 = point_y(center_point) - sqrt(block_r(b->prev) - pow(x - point_x(center_point),2));
+          // update initial point of prev block 
+          point_set_x (block_initial_point(b->prev), point_x(start_point(b->prev)));
+          point_set_y (block_initial_point(b->prev), point_y(start_point(b->prev)));
 
-          point_set_y(p1, y1);
-          point_set_y(p2, y2);
-          
-         //set closest point as new target 
-          p_new_target = point_dist(b->prev->target, p1) < point_dist(b->prev->target, p2) ? p1 : p2;
-
-        } else { // generic case 
-
-        /* mathematical computation
-
-        After some iterations the equation of the intersection is the following:
-        (a2^2 + 1)x^2 + 2(a2 * b2 - Xc - a2 * Yc)x + Xc^2 + b2^2 + Yc^2 -2 * b2 * Yc - r^2 = 0
-        
-        With the formula x = (-b +- sqrt(b^2 - 4 * a * c))/ (2 * a) there are two possible solutions
-        */
-
-        //(a2^2 + 1)
-        data_t A = pow(a2, 2) + 1;
-
-        //2(a2 * b2 - Xc - a2 * Yc)
-        data_t B = 2 * (a2 * (b2 - point_y(center_point)) - point_x(center_point));
-
-        // +Xc^2 + b2^2 + Yc^2 -2 * b2 * Yc - r^2
-        data_t C = + pow(point_x(center_point), 2) + pow(b2, 2) + pow(point_y(center_point), 2) - 2 * b2 * point_y(center_point) - pow(tool_radius, 2);
-
-        x1 = (-B + sqrt(pow(B,2) - 4 * A * C)) / 2 * A;
-        x2 = (-B - sqrt(pow(B,2) - 4 * A * C)) / 2 * A;
-
-        point_set_x(p1, x1);
-        point_set_x(p2, x2);
-
-        // use eq of line to find y
-        y1 = a2 * x1 + b2;
-        y2 = a2 * x2 + b2;
-
-        point_set_y(p1, y1);
-        point_set_y(p2, y2);
-
-        //set closest point as new target 
-        p_new_target = point_dist(b->prev->target, p1) < point_dist(b->prev->target, p2) ? p1 : p2;
-
+          block_compute(b->prev);
+          break;
         }
 
-        p0 = block_initial_point(b->prev);
-        point_modal(p0, b->prev->target);
-
-        //new target point of the arc block 
-        point_set_x(block_target(b->prev), point_x(p_new_target));
-        point_set_y(block_target(b->prev), point_y(p_new_target));
-
-        //inherit starting point of arc from previous block 
-        
-        block_compute(b->prev);
-
-
-        b->prev->arc_feedrate = MIN( b->prev->feedrate, pow(3.0 / 4.0 * pow(machine_A(b->prev->machine), 2) * pow(b->prev->r, 2), 0.25) * 60);
-
-        //at the end of the arc case
-        if (block_arc(b)) {
-        wprintf("Could not calculate arc coordinates\n");
-        rv++;
-        return rv;
+        // line -> none
+        if ((block_type(b) == NO_MOTION) || (block_type(b) == RAPID)){
+          //coming soon
         }
+
       break;
 
+      case ARC_CCW:
+      case ARC_CW:
+        //set common parameters
+        if (block_arc(b->prev)) {
+            wprintf("Could not calculate arc coordinates\n");
+            rv++;
+            return rv;
+          }
+        b->prev->acc = machine_A(b->prev->machine) / 2.0;
+        b->prev->arc_feedrate = MIN( b->prev->feedrate, pow(3.0 / 4.0 * pow(machine_A(b->prev->machine), 2) * pow(b->prev->r, 2), 0.25) * 60);
+
+        // arc -> line
+        if(block_type(b->prev) == LINE){
+          
+          // find intersection point and set it as new target point
+          p_new_target = intersection_arc_line(b->prev, b, block_target(b->prev), true);
+          point_set_x(block_target(b->prev), point_x(p_new_target));
+          point_set_y(block_target(b->prev), point_y(p_new_target));
+
+          // update initial point of prev block 
+          point_set_x (block_initial_point(b->prev), point_x(start_point(b->prev)));
+          point_set_y (block_initial_point(b->prev), point_y(start_point(b->prev)));
+
+          if (block_arc(b->prev)) {
+            wprintf("Could not calculate arc coordinates\n");
+            rv++;
+            return rv;
+          }
+
+          b->prev->arc_feedrate = MIN( b->prev->feedrate, pow(3.0 / 4.0 * pow(machine_A(b->prev->machine), 2) * pow(b->prev->r, 2), 0.25) * 60);
+          block_compute(b->prev);
+          break;
+        }
+
+        // arc -> none
+        if((block_type(b) == NO_MOTION) || (block_type(b) == RAPID)){
+          //coming soon
+        }
+
+      break;
 
     default:
       break;
     }
 
-      if(vertical && !vertical1){
-        
-        point_set_x(p_new_target, a1);
-        y = a2 * a1;
-
-      }
-
-
-
   }
 
-
-
-  
-
-  // deal with motion blocks
+  // no trc
   switch (b->type) {
   case LINE:
     b->acc = machine_A(b->machine);
     b->arc_feedrate = b->feedrate;
-    //block_compute(b); it will be done in the next block
+    block_compute(b);
     break;
 
   case ARC_CW:
@@ -453,21 +338,8 @@ int block_parse(block_t *b) {
       rv++;
       break;
     }
-    // Set corrected feedrate and acceleration
-    // Centripetal acc = f^2/r, must be <= A
-    // We divide by two because with a tangential component equal to A,
-    // any non-null feedrate is providing a total acceleration in excess of A.
     b->acc = machine_A(b->machine) / 2.0;
-    // Then: a_m^2/4 + (a_m^4 t^4) / (16 r^2) = A^2
-    // solve for t: t^4 = 12 r^2 / a_m^2 (t at max total acceleration)
-    // calculate feedrate at t: f = a_m/2 t = (3/4 a_m^2 r^2)^0.25
-    // INI file gives A in mm/s^2, feedrate is given in mm/min.
-    // A more elegant solution would be to calculate a minimum time soltion
-    // for the whole arc, but it is outside the scope.
-    b->arc_feedrate = MIN(
-        b->feedrate,
-        pow(3.0 / 4.0 * pow(machine_A(b->machine), 2) * pow(b->r, 2), 0.25) *
-            60);
+    b->arc_feedrate = MIN(b->feedrate, pow(3.0 / 4.0 * pow(machine_A(b->machine), 2) * pow(b->r, 2), 0.25) * 60);
     block_compute(b);
     break;
   default:
@@ -559,7 +431,7 @@ static int block_set_fields(block_t *b, char cmd, char *arg) {
     b->n = atol(arg);
     break;
   case 'G':
-    b->type = block_trc_evaluation(b, arg);
+    b->trc = block_trc_evaluation(b, arg);
     break;
   case 'X':
     point_set_x(b->target, atof(arg));
@@ -707,15 +579,15 @@ static int block_arc(block_t *b) {
 }
 
 //trc evaluation 
-static block_type_t block_trc_evaluation(block_t *b, char *arg){
-  block_type_t i = (block_type_t) atoi(arg);
-  switch ((int)i){
+static int block_trc_evaluation(block_t *b, char *arg){
+  int i =  atoi(arg);
+  switch (i){
   case 41:
-    b->trc = -1; return TRC_ON;
+    return -1;
   case 42:
-    b->trc = 1; return TRC_ON;
+    return 1;
   case 40:
-    b->trc = 0; return NO_TRC;
+    return 0;
   default:
     return i;
   }
@@ -785,6 +657,186 @@ static int block_eq_sign(point_t *from, point_t *to, data_t const trc){
 
 }
 
+/**
+ * Calculate the intersection point between an arc block and a line block (with trc evaluation).
+ * 
+ * @param b_arc is the arc block
+ * @param b_line is the line block
+ * @param target is the original intersection point
+ * @param change_radius says whether or not the arc block's radius can be changed
+ * 
+ * @return The intersection point of the two blocks.
+ * 
+*/
+static point_t *intersection_arc_line(block_t *b_arc, block_t *b_line, point_t const *target, bool change_radius){
+  // tool radius
+  data_t tool_radius = machine_tool_radius (b_arc->machine, b_arc->tool);
+
+  //line
+  bool vertical = false;
+  data_t a, b;
+
+  //arc
+  point_t *center_point = block_center(b_arc);
+  point_t *p1 = point_new();
+  point_t *p2 = point_new();
+  data_t x1, x2, y1, y2, temp_radius;
+
+  //line equation
+  vertical = block_equation(&a, &b, block_initial_point(b_line), block_target(b_line));
+  int sign_trc = block_eq_sign(block_initial_point(b_line), block_target(b_line), b_line->trc);
+  b += sign_trc * tool_radius * sqrt(a * a + 1.0);
+
+  //evaluate arc block
+  b_arc->acc = machine_A(b_arc->machine) / 2.0;
+  b_arc->arc_feedrate = MIN( b_arc->feedrate, pow(3.0 / 4.0 * pow(machine_A(b_arc->machine), 2) * pow(b_arc->r, 2), 0.25) * 60);
+
+  // trc reduces or increses the radius of the arc
+        
+  // sign(r+-r_tool) |    CW       |   CCW
+  // --------------------------------------------
+  // RIGHT TRC (+1)  | r - r_tool  | r - r_tool
+  // LEFT  TRC (+1)  | r + r_tool  | r + r_tool  
+  
+  // get new radius and set it
+  temp_radius = (b_arc->type == ARC_CCW) ? (b_arc->trc + b_arc->trc * tool_radius) : (b_arc->trc - b_arc->trc * tool_radius);
+
+  if(change_radius)
+    b_arc->r = temp_radius;
+
+  // intersection point evaluation
+  if(vertical){
+    x1 = point_x(block_target(b_line)) + sign_trc * tool_radius;
+          
+    point_set_x(p1, x1);
+    point_set_x(p2, x1);
+
+    // y = yc +- sqrt(r - (x-xc)^2)
+    y1 = point_y(center_point) + sqrt(temp_radius - pow(x1 - point_x(center_point),2));
+    y2 = point_y(center_point) - sqrt(temp_radius - pow(x1 - point_x(center_point),2));
+
+    point_set_y(p1, y1);
+    point_set_y(p2, y2);
+          
+    //set closest point as new target 
+    return (point_dist(target, p1) < point_dist(target, p2)) ? p1 : p2;
+
+  }
+
+  // generic case (not vertical)
+
+  /* mathematical computation
+  After some iterations the equation of the intersection is the following:
+  (a2^2 + 1)x^2 + 2(a2 * b2 - Xc - a2 * Yc)x + Xc^2 + b2^2 + Yc^2 -2 * b2 * Yc - r^2 = 0
+  
+  With the formula x = (-b +- sqrt(b^2 - 4 * a * c))/ (2 * a) there are two possible solutions
+  */
+
+  // A = (a2^2 + 1)
+  data_t A = pow(a, 2) + 1;
+
+  // B = 2(a2 * b2 - Xc - a2 * Yc)
+  data_t B = 2 * (a * (b - point_y(center_point)) - point_x(center_point));
+
+  // C = +Xc^2 + b2^2 + Yc^2 -2 * b2 * Yc - r^2
+  data_t C = + pow(point_x(center_point), 2) 
+             + pow(b, 2) + pow(point_y(center_point), 2) 
+             - 2 * b * point_y(center_point) 
+             - pow(temp_radius, 2);
+
+  x1 = (-B + sqrt(pow(B,2) - 4 * A * C)) / 2 * A;
+  x2 = (-B - sqrt(pow(B,2) - 4 * A * C)) / 2 * A;
+
+  point_set_x(p1, x1);
+  point_set_x(p2, x2);
+
+  // use eq of line to find y
+  y1 = a * x1 + b;
+  y2 = a * x2 + b;
+
+  point_set_y(p1, y1);
+  point_set_y(p2, y2);
+
+  //return closest point as new target 
+  return (point_dist(target, p1) < point_dist(target, p2)) ? p1 : p2;
+
+}
+
+/**
+ * Calculate the intersection point between two line blocks (with trc evaluation).
+ * 
+ * @param b_line1 is the first line block
+ * @param b_line2 is the second line block
+ * 
+ * @return The intersection point of the two blocks.
+ * 
+*/
+static point_t *intersection_line_line(block_t *b_line1, block_t *b_line2){
+  // tool radius
+  data_t tool_radius = machine_tool_radius (b_line1->machine, b_line1->tool);
+
+  bool vertical1 = false;
+  bool vertical2 = false;
+  data_t a1, a2, b1, b2, x, y;
+  point_t *p_new_target = point_new();
+
+  vertical1 = block_equation(&a1, &b1, block_initial_point(b_line1), block_target(b_line1));
+  vertical2 = block_equation(&a2, &b2, block_initial_point(b_line2), block_target(b_line2));
+  int sign_trc = block_eq_sign(block_initial_point(b_line1), block_target(b_line1), block_trc(b_line1));
+  int sign_trc1 = block_eq_sign(block_initial_point(b_line2),block_target(b_line2), block_trc(b_line2));
+
+  //does not affect the vertical lines
+  b1 += sign_trc * tool_radius * sqrt(a1 * a1 + 1.0);
+  b2 += sign_trc1 * tool_radius * sqrt(a2 * a2 + 1.0);
+
+  // vertical lines
+  if(!vertical1 && vertical2){
+    x = point_x(block_target(b_line2)) + sign_trc1 * tool_radius;
+    // y = m * x + q
+    y = a1 * x + b1;
+    point_set_xyz(p_new_target, x, y, point_z(block_target(b_line1)));
+    return p_new_target;
+  }
+
+  if(vertical1 && !vertical2){
+    x = point_x(block_target(b_line1)) + sign_trc1 * tool_radius;
+    // y = m * x + q
+    y = a2 * x + b2;
+    point_set_xyz(p_new_target, x, y, point_z(block_target(b_line1)));
+    return p_new_target;
+  }
+
+  if(vertical1 && vertical2){
+    x = point_x(block_target(b_line1)) + sign_trc * tool_radius;
+    y = point_y(block_target(b_line1));
+    point_set_xyz(p_new_target, x, y, point_z(block_target(b_line1)));
+    return p_new_target;
+  }
+
+  // not vertical lines
+  // collinear case - horizontal case
+  if((a1 == 0) && (a2 == 0)){
+    x = point_x(block_target(b_line1));
+    y = point_y(block_target(b_line1)) + sign_trc * tool_radius;
+    point_set_xyz(p_new_target, x, y, point_z(block_target(b_line1)));
+    return p_new_target;
+  } 
+
+  // generic collinear case
+  if (a1 == a2){
+    x = sign_trc * a1 / fabs(a1) * sqrt((a1 * a1) / (a1 * a1 + 1));
+    y = -x / a1;
+    point_set_xyz(p_new_target, x, y, point_z(block_target(b_line1)));
+    return p_new_target;
+  }
+  
+  // generic case
+  x = (b2 - b1) / (a1 - a2);
+  y = (b1 * a2 - b2 * a1) / (a2 - a1);
+  point_set_xyz(p_new_target, x, y, point_z(block_target(b_line1)));
+  return p_new_target;
+}
+
 
 //static data_t block_angle_with_prev(){
 //  return 1.0;
@@ -841,5 +893,4 @@ int main(int argc, char const *argv[]) {
   machine_free(m);
   return 0;
 }
-
 #endif
