@@ -1,36 +1,17 @@
 # CNC
 CNC with tool radius compensation from repo https://github.com/pbosetti/c-cnc23
 
+This document provides a description of the code changes.
+
 ## Add support to G-CODE G40/G41/G42 command
 
-Add field `trc` in block object:
+Added field `trc` and `initial_point` in block object:
 
 ```C
 data_t trc;
+point_t *initial_point;
 ```
-
-Added function `block_trc_evaluation` to set the `trc` field in `block_set_fields` function
-
-(added `TRC_LEFT` and `TRC_RIGHT` to `block.h` file):
-```C
-static block_type_t block_trc_evaluation(block_t *b, char *arg){
-  block_type_t i = (block_type_t) atoi(arg);
-  switch ((int)i){
-  case 41:
-    b->trc = -1; return TRC_ON;
-  case 42:
-    b->trc = 1; return TRC_ON;
-  case 40:
-    b->trc = 0; return NO_TRC;
-  default:
-    return i;
-  }
-}
-```
-
-
-Add a getter function for `trc` value (Added a line in the macro):
-
+Added getter functions for `trc`  and `initial_point` fields:
 
 ```C
 #define block_getter(typ, par, name)    \
@@ -41,6 +22,17 @@ Add a getter function for `trc` value (Added a line in the macro):
 
 block_getter(data_t,trc,trc);
 ```
+
+Added function `block_trc_evaluation` to set the `trc` field in `block_set_fields` function:
+
+```C
+static block_type_t block_trc_evaluation(block_t *b, char *arg){
+  b->trc = (atoi(arg) == 41) ? (-1) : ((atoi(arg) == 42) ? 1 : 0);
+  return (block_type_t) atoi(arg);
+}
+```
+
+
 
 Set `trc` in `block_new` function inherited from previous block `prev`:
 
