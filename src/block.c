@@ -90,10 +90,7 @@ block_t *block_new(char const *line, block_t *prev, machine_t const *machine) {
   }
 
   // inherit trc from previous block
-  if(prev)
-    b->trc = prev->trc;
-  else
-    b->trc = 0;
+  b->trc = prev ? prev->trc : 0;
 
   // in any case all non-modal parameters are set to 0
   b->i = b->j = b->r = 0;
