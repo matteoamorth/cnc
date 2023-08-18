@@ -709,9 +709,9 @@ static point_t *intersection_arc_line(block_t *b_arc, block_t *b_line, point_t c
   // trc reduces or increses the radius of the arc
         
   // sign(r+-r_tool) |    CW       |   CCW
-  // --------------------------------------------
+  // -------------------------------------------
   // RIGHT TRC (+1)  | r - r_tool  | r - r_tool
-  // LEFT  TRC (+1)  | r + r_tool  | r + r_tool  
+  // LEFT  TRC (-1)  | r + r_tool  | r + r_tool  
   
   // get new radius and set it
   temp_radius = (b_arc->type == ARC_CCW) ? (b_arc->trc + b_arc->trc * tool_radius) : (b_arc->trc - b_arc->trc * tool_radius);

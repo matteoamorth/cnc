@@ -59,7 +59,6 @@ static int block_set_fields(block_t *b, char cmd, char *arg) {
 
 ### Mathematical problem definition - line equation
 
-#### Generic line equation
 
 Given the equation of a generic line:
 
@@ -84,6 +83,8 @@ It is important to remember special cases:
   $$x = x_1$$
 
 > **Note**: the vertical case is a strange exception that must be considered. The function `block_equation` can return a special value (for example `bool`), that indicates whether or not it is a vertical line.
+
+### Line equation code
 
 The `block_equation()` calculates the equation of a line between two points. The `a` and `b` pointers are the line equation parameters. If the return value is `true`, the equation is $x = a$.
 
@@ -111,7 +112,7 @@ static bool block_equation(data_t *a, data_t *b, point_t const *p_init, point_t 
 }
 ```
 
-#### Offset sign of the line equation
+### Offset sign of the line equation
 
 Now the equation of line with offset can be evaluated:
 
@@ -147,13 +148,87 @@ static int block_eq_sign(point_t *from, point_t *to, data_t const trc){
 }
   ```
 
+> **Note**: a few comparison conditions have the equal sign because vertical and horizontal cases must be considered.
+
 ### Mathematical problem definition - lines intersection
 
-The `intersection_line_line()` function
+Given two line equations:
+
+$$ y = a_1x + b_1$$
+$$ y = a_2x + b_2$$
+
+The generic intersection point coordinates calculated follow these formulas:
+
+$$ x = {b_2 - b_1 \over a_1 - a_2}$$
+$$ y = {b_1  a_2 - b_2  a_1 \over a_2 - a_1} $$
+
+### Lines intersection code
+
+The `intersection_line_line()` function evaluates the intersection point, considering also the special cases of vertical and collinear lines.  
+
+In this section, the first block is not vertical while the second is vertical.
+
+```c
+if(!vertical1 && vertical2){
+    x = point_x(block_target(b_line2)) + sign_trc1 * tool_radius;
+    // y = m * x + q
+    y = a1 * x + b1;
+    point_set_xyz(p_new_target, x, y, point_z(block_target(b_line1)));
+    return p_new_target;
+  }
+```
+
+### Mathematical problem definition - arc equation
+
+To describe an arc it is possible to use the generic equation of a circle:
+
+$$ (x - X_c)^2 + (y - Y_c)^2 = r^2 $$
+
+*where $X_c$ and $Y_c$ are circle's center coordinates.*
+
+### Offset sign of the circle equation
+
+In the circle block the program must evaluate if the radius must be increased or not. This table sums up the logic considered.
+
+|TRC             |    CW         |   CCW        |
+|----------------|---------------|--------------|
+|RIGHT TRC (+1)  | $r - tool_r$  | $r - tool_r$ |
+|LEFT  TRC (-1)  | $r + tool_r$  | $r + tool_r$ |
+
+The operation can be performed with this line:
+
+```c
+temp_radius = (b_arc->type == ARC_CCW) ? (b_arc->trc + b_arc->trc * tool_radius) : (b_arc->trc - b_arc->trc * tool_radius);
+```
+
+### Mathematical problem definition - arc and line intersection 
+
+Given the generic equation of line and the generic equation of circle, it is possible to calculate two different points of intersection:
+
+$$y = a x + b$$
+$$ (x - X_c)^2 + (y - Y_c)^2 = r^2 $$
+
+
+$$ (a^2 + 1)x^2 + 2(a  b - X_c - a  Y_c) x + X_c^2 + b^2 + Y_c^2 -2  b  Y_c - r^2 = 0 $$
+
+> **Note**: when the program evaluates the trc of blocks, one of the two points found is the solution, the other one must be discarted. To choose the correct point, a comparison between the original intersection point and the two solution is performed. The closest is the correct point.
+
+### Arc and line intersection code
+
+The `intersection_arc_line()` function calculates the intersection point, considering also the special case of vertical lines.  
+
+```c
+point_t *intersection_arc_line(block_t *b_arc, block_t *b_line, point_t const *target, bool change_radius)
+```
+
+Where `b_arc` is the arc block, `b_line` is the line block, `target` the original target without trc and `change_radius` indicates wheter or not to change the arc radius. 
+> The radius is changed only when the first block is an arc and the second is a line.
+
+> The collinear case (line tangential to circle) provides a solution point twice.
 
 ## Machine object
 
-In this section the `machine` object and `mchine.ini` configuration have been edited to allow the tools upload to the system.
+In this section the `machine` object and `machine.ini` configuration have been modified to allow the tools upload to the system.
 
 ### Configuration file - machine.ini
 
