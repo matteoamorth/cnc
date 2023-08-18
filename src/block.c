@@ -321,7 +321,7 @@ int block_parse(block_t *b) {
           
           p_new_target = intersection_arc_line(b, b->prev, block_target(b->prev), false);
 
-          // need to change only the final point of rapid block
+          // update final point of rapid block
           point_set_x(block_target(b->prev), point_x(p_new_target));
           point_set_y(block_target(b->prev), point_y(p_new_target));
 
