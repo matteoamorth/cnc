@@ -23,6 +23,7 @@
   "launch": {
     "version": "0.2.0",
     "configurations": [
+    
       {
         "type": "lldb",
         "request": "launch",
@@ -69,6 +70,14 @@
         "name": "axis",
         "program": "${workspaceFolder}/build/axis",
         "args": [],
+        "cwd": "${workspaceFolder}"
+      },
+      {
+        "type": "lldb",
+        "request": "launch",
+        "name": "ccnc",
+        "program": "${workspaceFolder}/build/ccnc",
+        "args": ["testTrc.gcode", "machine.ini"],
         "cwd": "${workspaceFolder}"
       }
     ],

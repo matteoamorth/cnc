@@ -181,6 +181,16 @@ void point_modal(point_t const *from, point_t *to) {
 }
 
 
+/**
+ * @param source point with coordinates
+ * @param clone point with the coordinates inherited
+ * 
+ * @return nothing, updated point clone coordinates
+*/
+void point_clone(point_t const *source, point_t *clone){
+  point_set_xyz(clone, point_x(source), point_y(source), point_z(source));
+}
+
 //   _____         _   
 //  |_   _|__  ___| |_ 
 //    | |/ _ \/ __| __|

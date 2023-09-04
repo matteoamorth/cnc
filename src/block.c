@@ -11,6 +11,8 @@
 #include <math.h>
 #include <sys/param.h> // MIN()
 
+#define TRC_FEATURE 1
+
 //   ____            _                 _   _
 //  |  _ \  ___  ___| | __ _ _ __ __ _| |_(_) ___  _ __  ___
 //  | | | |/ _ \/ __| |/ _` | '__/ _` | __| |/ _ \| '_ \/ __|
@@ -58,11 +60,15 @@ static point_t *start_point(block_t *b);
 static int block_set_fields(block_t *b, char cmd, char *argv);
 static void block_compute(block_t *b);
 static int block_arc(block_t *b);
+
+#if TRC_FEATURE
 static block_type_t block_trc_evaluation(block_t *b, char *arg);
 static bool block_equation(data_t *a, data_t *b, point_t const *p_init, point_t const *p_final);
 static int block_eq_sign(point_t *from, point_t *to, data_t const trc);
 static point_t *intersection_arc_line(block_t *b_arc, block_t *b_line, point_t const *target, bool change_radius);
 static point_t *intersection_line_line(block_t *b_line1, block_t *b_line2);
+#endif
+
 
 //   _____                 _   _
 //  |  ___|   _ _ __   ___| |_(_) ___  _ __  ___
@@ -151,8 +157,8 @@ void block_print(block_t *b, FILE *out) {
   point_t *p0 = block_initial_point(b);
   point_inspect(p0, &start);
   point_inspect(b->target, &end);
-  fprintf(out, "%03lu %s->%s F%7.1f S%7.1f T%2lu (G%02d)\n", b->n, start, end,
-          b->feedrate, b->spindle, b->tool, b->type);
+  fprintf(out, "%03lu %s->%s F%7.1f S%7.1f T%2lu (G%02d) %f\n", b->n, start, end,
+          b->feedrate, b->spindle, b->tool, b->type, b->trc);
   free(start);
   free(end);
 }
@@ -207,7 +213,7 @@ int block_parse(block_t *b) {
   point_delta(p0, b->target, b->delta);
   b->length = point_dist(p0, b->target);
 
-  // trc evaluation
+  #if TRC_FEATURE
   if(b->prev)
   if((block_trc(b->prev) == 1) || (block_trc(b->prev) == -1)){
     point_t *p_new_target = point_new();
@@ -219,25 +225,26 @@ int block_parse(block_t *b) {
         b->prev->arc_feedrate = b->feedrate;
 
         // line -> line / rapid
-        if ((block_type(b) == LINE) || (block_type(b) == RAPID)){
+        if ((block_type(b) == LINE) || (block_type(b) == RAPID) || (block_type(b) == TRC_OFF)){
 
-          // find intersection point and set as new target point
+          // find intersection point and set as new target point of prevoius block
           p_new_target = intersection_line_line (b->prev, b);
-
-          point_set_x(block_target(b->prev), point_x(p_new_target));
-          point_set_y(block_target(b->prev), point_y(p_new_target));
+          point_clone(p_new_target, block_target(b->prev));
 
           // update initial point of prev block
-          point_set_x (block_initial_point(b->prev), point_x(start_point(b->prev)));
-          point_set_y (block_initial_point(b->prev), point_y(start_point(b->prev)));
+          point_clone(start_point(b->prev), block_initial_point(b->prev));
 
-          //evaluation
+          // update length
           p0 = start_point(b->prev);
           point_delta(p0, b->prev->target, b->prev->delta);
           b->prev->length = point_dist(p0, b->prev->target);
 
           //compute block after changes
           block_compute(b->prev);
+
+          if (block_type(b) == TRC_OFF)
+            point_clone(start_point(b),block_initial_point(b));
+
           break;
         }
 
@@ -251,12 +258,10 @@ int block_parse(block_t *b) {
           
           // find intersection point and set it as new target point
           p_new_target = intersection_arc_line(b, b->prev, block_target(b->prev), false);
-          point_set_x(block_target(b->prev), point_x(p_new_target));
-          point_set_y(block_target(b->prev), point_y(p_new_target));
+          point_clone(p_new_target, block_target(b->prev));
 
           // update initial point of prev block 
-          point_set_x (block_initial_point(b->prev), point_x(start_point(b->prev)));
-          point_set_y (block_initial_point(b->prev), point_y(start_point(b->prev)));
+          point_clone(start_point(b->prev), block_initial_point(b->prev));
 
           block_compute(b->prev);
           break;
@@ -276,16 +281,14 @@ int block_parse(block_t *b) {
         b->prev->arc_feedrate = MIN( b->prev->feedrate, pow(3.0 / 4.0 * pow(machine_A(b->prev->machine), 2) * pow(b->prev->r, 2), 0.25) * 60);
 
         // arc -> line / rapid
-        if((block_type(b) == LINE) || (block_type(b) == RAPID)){
+        if((block_type(b) == LINE) || (block_type(b) == RAPID) || (block_type(b) == TRC_OFF)){
           
           // find intersection point and set it as new target point
           p_new_target = intersection_arc_line(b->prev, b, block_target(b->prev), true);
-          point_set_x(block_target(b->prev), point_x(p_new_target));
-          point_set_y(block_target(b->prev), point_y(p_new_target));
+          point_clone(p_new_target, block_target(b->prev));
 
           // update initial point of prev block 
-          point_set_x (block_initial_point(b->prev), point_x(start_point(b->prev)));
-          point_set_y (block_initial_point(b->prev), point_y(start_point(b->prev)));
+          point_clone(start_point(b->prev), block_initial_point(b->prev));
 
           if (block_arc(b->prev)) {
             wprintf("Could not calculate arc coordinates\n");
@@ -297,18 +300,26 @@ int block_parse(block_t *b) {
           block_compute(b->prev);
           return rv;
         }
+      
+        if (block_type(b) == TRC_OFF)
+          point_clone(start_point(b),block_initial_point(b));
+
       break;
 
       case RAPID:
-        if(block_type(b) == LINE){
+      case TRC_LEFT:
+      case TRC_RIGHT:
+        if ((block_type(b) == LINE) || (block_type(b) == TRC_OFF)){
           p_new_target = intersection_line_line(b->prev, b);
 
-          point_set_x(block_target(b->prev), point_x(p_new_target));
-          point_set_y(block_target(b->prev), point_y(p_new_target));
+          point_clone(p_new_target, block_target(b->prev));
 
           // update initial point of prev block
-          point_set_x (block_initial_point(b->prev), point_x(start_point(b->prev)));
-          point_set_y (block_initial_point(b->prev), point_y(start_point(b->prev)));
+          point_clone(start_point(b->prev), block_initial_point(b->prev));
+
+          if (block_type(b) == TRC_OFF)
+            point_clone(start_point(b),block_initial_point(b));
+
           return rv;
         }
 
@@ -338,6 +349,12 @@ int block_parse(block_t *b) {
     }
     return rv;
   }
+
+  // if we have a G40 block we need to fix the initial point with the previous target point
+
+  point_set_xyz(block_initial_point(b), point_x(start_point(b)), point_y(start_point(b)), point_z(start_point(b)));
+
+  #endif
 
   // no trc - original block_parse() function
   switch (b->type) {
@@ -448,7 +465,11 @@ static int block_set_fields(block_t *b, char cmd, char *arg) {
     b->n = atol(arg);
     break;
   case 'G':
+    # if TRC_FEATURE
     b->type = block_trc_evaluation(b, arg);
+    break;
+    #endif
+    b->type = atoi(arg);
     break;
   case 'X':
     point_set_x(b->target, atof(arg));
@@ -595,6 +616,8 @@ static int block_arc(block_t *b) {
   return 0;
 }
 
+#if TRC_FEATURE
+
 /**
  * Set value of trc and return the block type
  * 
@@ -604,7 +627,12 @@ static int block_arc(block_t *b) {
  * @return the block type
 */
 static block_type_t block_trc_evaluation(block_t *b, char *arg){
-  b->trc = (atoi(arg) == 41) ? (-1) : ((atoi(arg) == 42) ? 1 : 0);
+  switch (atoi(arg)){
+    case 40: b->trc = 0; break;
+    case 41: b->trc = 1; break;
+    case 42: b->trc = -1; break;
+    default: break;
+  }
   return (block_type_t) atoi(arg);
 }
 
@@ -639,8 +667,8 @@ static bool block_equation(data_t *a, data_t *b, point_t const *p_init, point_t 
     temp_b = (point_x(p_final) * point_y(p_init) - point_x(p_init) * point_y(p_final)) / point_x(p_dist);
   }
 
-  memcpy(a, &temp_a, sizeof(data_t));
-  memcpy(b, &temp_b, sizeof(data_t));
+  *a = temp_a;
+  *b = temp_b;
   return vertical;
 }
 
@@ -662,6 +690,10 @@ static int block_eq_sign(point_t *from, point_t *to, data_t const trc){
   // if trc = -1 => left
   point_t *p_dist = point_new();
   point_delta(from, to, p_dist);
+
+  //z must be ignored
+
+  point_set_z(p_dist, 0);
 
   if((point_x(p_dist) > 0) && (point_y(p_dist) >= 0)) return -trc;
   if((point_x(p_dist) <= 0) && (point_y(p_dist) >= 0)) return trc;
@@ -856,6 +888,8 @@ static point_t *intersection_line_line(block_t *b_line1, block_t *b_line2){
 //  return 1.0;
 //}
 
+#endif
+
 // MAIN
 //   _____         _                     _
 //  |_   _|__  ___| |_   _ __ ___   __ _(_)_ __
@@ -864,6 +898,10 @@ static point_t *intersection_line_line(block_t *b_line1, block_t *b_line2){
 //    |_|\___||___/\__| |_| |_| |_|\__,_|_|_| |_|
 
 #ifdef BLOCK_MAIN
+
+
+//test 1
+#if 0
 int main(int argc, char const *argv[]) {
   machine_t *m = machine_new(argv[1]);
   block_t *b1 = NULL, *b2 = NULL, *b3 = NULL, *b4 = NULL;
@@ -872,7 +910,7 @@ int main(int argc, char const *argv[]) {
     exit(EXIT_FAILURE);
   }
 
-  b1 = block_new("N10 G01 X90 Y90 Z100 T3 F1000", NULL, m);
+  b1 = block_new("N10 G41 x-10 y0", NULL, m);
   block_parse(b1);
   b2 = block_new("N20 G01 y100 S2000", b1, m);
   block_parse(b2);
@@ -908,4 +946,160 @@ int main(int argc, char const *argv[]) {
   machine_free(m);
   return 0;
 }
+
+#endif
+
+//test collinear blocks
+#if 0
+int main(int argc, char const *argv[]) {
+  machine_t *m = machine_new(argv[1]);
+  block_t *b1 = NULL, *b2 = NULL, *b3 = NULL, *b4 = NULL, *b5 =NULL;
+  if (!m) {
+    eprintf("Error creating machine\n");
+    exit(EXIT_FAILURE);
+  }
+
+  b1 = block_new("N10 G42 x5 Z20 T1", NULL, m);
+  block_parse(b1);
+  b2 = block_new("N20 G01 x10 z0 f200", b1, m);
+  block_parse(b2);
+  b3 = block_new("N30 g01 y20 f2000 s5000 t1", b2, m);
+  block_parse(b3);
+  b4 = block_new("N40 g01 x40", b3, m);
+  block_parse(b4);
+  b5 = block_new("N50 g40 x0 y0 z200", b4, m);
+  block_parse(b5);
+
+  block_print(b1, stderr);
+  block_print(b2, stderr);
+  block_print(b3, stderr);
+  block_print(b4, stderr);
+
+  wprintf("Intepolation of block 20 (duration: %f)\n", block_dt(b2));
+  {
+    data_t t = 0, tq = machine_tq(m), dt = block_dt(b2);
+    data_t lambda = 0, v = 0;
+    printf("t lambda v x y z\n");
+    for (t = 0; t - dt <= tq/10.0; t += tq) {
+      lambda = block_lambda(b2, t, &v);
+      block_interpolate(b2, lambda);
+      printf("%f %f %f %.3f %.3f %.3f\n", t, lambda, v, 
+        point_x(machine_setpoint(m)),
+        point_y(machine_setpoint(m)),
+        point_z(machine_setpoint(m)));
+    }
+  }
+
+  block_free(b1);
+  block_free(b2);
+  block_free(b3);
+  block_free(b4);
+  machine_free(m);
+  return 0;
+}
+#endif
+
+//test vertical blocks
+#if 1
+int main(int argc, char const *argv[]) {
+  machine_t *m = machine_new(argv[1]);
+  block_t *b1 = NULL, *b2 = NULL, *b3 = NULL, *b4 = NULL, *b5 =NULL, *b6 = NULL;
+  if (!m) {
+    eprintf("Error creating machine\n");
+    exit(EXIT_FAILURE);
+  }
+
+  b1 = block_new("N10 G42 x5 Z20 T1", NULL, m);
+  block_parse(b1);
+  b2 = block_new("N20 G01 x10 z0 f200", b1, m);
+  block_parse(b2);
+  b3 = block_new("N30 g01 x20 f2000 s5000", b2, m);
+  block_parse(b3);
+  b4 = block_new("N40 g01 x40", b3, m);
+  block_parse(b4);
+  b5 = block_new("N50 g01 x60", b4, m);
+  block_parse(b5);
+  b6 = block_new("N60 g40 x70", b5, m);
+  block_parse(b6);
+
+  block_print(b1, stderr);
+  block_print(b2, stderr);
+  block_print(b3, stderr);
+  block_print(b4, stderr);
+  block_print(b5, stderr);
+  block_print(b6, stderr);
+
+  wprintf("Intepolation of block 20 (duration: %f)\n", block_dt(b2));
+  {
+    data_t t = 0, tq = machine_tq(m), dt = block_dt(b2);
+    data_t lambda = 0, v = 0;
+    printf("t lambda v x y z\n");
+    for (t = 0; t - dt <= tq/10.0; t += tq) {
+      lambda = block_lambda(b2, t, &v);
+      block_interpolate(b2, lambda);
+      printf("%f %f %f %.3f %.3f %.3f\n", t, lambda, v, 
+        point_x(machine_setpoint(m)),
+        point_y(machine_setpoint(m)),
+        point_z(machine_setpoint(m)));
+    }
+  }
+
+  block_free(b1);
+  block_free(b2);
+  block_free(b3);
+  block_free(b4);
+  machine_free(m);
+  return 0;
+}
+#endif
+
+// original main
+#if 0
+int main(int argc, char const *argv[]) {
+  machine_t *m = machine_new(argv[1]);
+  block_t *b1 = NULL, *b2 = NULL, *b3 = NULL, *b4 = NULL;
+  if (!m) {
+    eprintf("Error creating machine\n");
+    exit(EXIT_FAILURE);
+  }
+
+  b1 = block_new("N10 G00 X90 Y90 Z100 T3 F1000", NULL, m);
+  block_parse(b1);
+  b2 = block_new("N20 G01 y100 S2000", b1, m);
+  block_parse(b2);
+  b3 = block_new("N30 G01 Y200", b2, m);
+  block_parse(b3);
+  b4 = block_new("N40 G01 x0 y0 z0", b3, m);
+  block_parse(b4);
+
+  block_print(b1, stderr);
+  block_print(b2, stderr);
+  block_print(b3, stderr);
+  block_print(b4, stderr);
+
+  wprintf("Intepolation of block 20 (duration: %f)\n", block_dt(b2));
+  {
+    data_t t = 0, tq = machine_tq(m), dt = block_dt(b2);
+    data_t lambda = 0, v = 0;
+    printf("t lambda v x y z\n");
+    for (t = 0; t - dt <= tq/10.0; t += tq) {
+      lambda = block_lambda(b2, t, &v);
+      block_interpolate(b2, lambda);
+      printf("%f %f %f %.3f %.3f %.3f\n", t, lambda, v, 
+        point_x(machine_setpoint(m)),
+        point_y(machine_setpoint(m)),
+        point_z(machine_setpoint(m)));
+    }
+  }
+
+  block_free(b1);
+  block_free(b2);
+  block_free(b3);
+  block_free(b4);
+  machine_free(m);
+  return 0;
+}
+#endif
+
+
 #endif

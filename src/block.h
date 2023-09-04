@@ -29,7 +29,10 @@ typedef enum {
   LINE,
   ARC_CW,
   ARC_CCW,
-  NO_MOTION
+  NO_MOTION,
+  TRC_OFF = 40,
+  TRC_RIGHT = 41,
+  TRC_LEFT = 42
 } block_type_t;
 
 //   _____                 _   _                 
@@ -64,7 +67,7 @@ point_t *block_initial_point(block_t const *b);
 int block_parse(block_t *b);
 data_t block_lambda(block_t *b, data_t time, data_t *v);
 point_t *block_interpolate(block_t *b, data_t lambda);
-
+void point_clone(point_t const *source, point_t *clone);
 
 
 #endif // BLOCK_H

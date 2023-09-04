@@ -41,7 +41,13 @@ Added function `block_trc_evaluation` to set the `trc` field in `block_set_field
 
 ```C
 static block_type_t block_trc_evaluation(block_t *b, char *arg){
-  b->trc = (atoi(arg) == 41) ? (-1) : ((atoi(arg) == 42) ? 1 : 0);
+  static block_type_t block_trc_evaluation(block_t *b, char *arg){
+  switch (atoi(arg)){
+    case 40: b->trc = 0; break;
+    case 41: b->trc = -1; break;
+    case 42: b->trc = 1; break;
+    default: break;
+  }
   return (block_type_t) atoi(arg);
 }
 ```

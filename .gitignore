@@ -3,3 +3,7 @@
 /.vscode
 /documents
 /goodies
+
+#extensions excluded
+
+*.DS_store
