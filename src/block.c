@@ -62,7 +62,7 @@ static void block_compute(block_t *b);
 static int block_arc(block_t *b);
 
 #if TRC_FEATURE
-static block_type_t block_trc_evaluation(block_t *b, char *arg);
+static void block_trc_evaluation(block_t *b, char *arg);
 static bool block_equation(data_t *a, data_t *b, point_t const *p_init, point_t const *p_final);
 static int block_eq_sign(point_t *from, point_t *to, data_t const trc);
 static point_t *intersection_arc_line(block_t *b_arc, block_t *b_line, point_t const *target, bool change_radius);
@@ -466,8 +466,7 @@ static int block_set_fields(block_t *b, char cmd, char *arg) {
     break;
   case 'G':
     # if TRC_FEATURE
-    b->type = block_trc_evaluation(b, arg);
-    break;
+    block_trc_evaluation(b, arg);
     #endif
     b->type = atoi(arg);
     break;
@@ -626,7 +625,7 @@ static int block_arc(block_t *b) {
  * 
  * @return the block type
 */
-static block_type_t block_trc_evaluation(block_t *b, char *arg){
+static void block_trc_evaluation(block_t *b, char *arg){
   switch (atoi(arg)){
     case 40: b->trc = 0; break;
     case 41: b->trc = 1; break;
