@@ -272,11 +272,11 @@ int block_parse(block_t *b) {
       case ARC_CCW:
       case ARC_CW:
         //set common parameters
-        if (block_arc(b->prev)) {
-            wprintf("Could not calculate arc coordinates\n");
-            rv++;
-            return rv;
-          }
+        // if (block_arc(b->prev)) {
+        //     wprintf("Could not calculate arc coordinates\n");
+        //     rv++;
+        //     return rv;
+        //   }
         b->prev->acc = machine_A(b->prev->machine) / 2.0;
         b->prev->arc_feedrate = MIN( b->prev->feedrate, pow(3.0 / 4.0 * pow(machine_A(b->prev->machine), 2) * pow(b->prev->r, 2), 0.25) * 60);
 
@@ -297,7 +297,11 @@ int block_parse(block_t *b) {
           }
 
           b->prev->arc_feedrate = MIN( b->prev->feedrate, pow(3.0 / 4.0 * pow(machine_A(b->prev->machine), 2) * pow(b->prev->r, 2), 0.25) * 60);
-          block_compute(b->prev);
+          if (block_arc(b->prev)) {
+            wprintf("Could not calculate arc coordinates\n");
+            rv++;
+            return rv;
+          }
           return rv;
         }
       
@@ -367,7 +371,7 @@ int block_parse(block_t *b) {
   case ARC_CW:
   case ARC_CCW:
      if (block_arc(b)) {
-      wprintf("Could not calculate arc coordinates\n");
+      wprintf("Could not calculate arc coordinatesddddddddddddddddddddddd\n");
       rv++;
       break;
     }
@@ -562,7 +566,7 @@ static void block_compute(block_t *b) {
 // see slides pages 107-109
 static int block_arc(block_t *b) {
   data_t x0, y0, z0, xc, yc, xf, yf, zf, r;
-  point_t *p0 = block_initial_point(b);
+  point_t *p0 = start_point(b);
   x0 = point_x(p0);
   y0 = point_y(p0);
   z0 = point_z(p0);
@@ -632,7 +636,7 @@ static void block_trc_evaluation(block_t *b, char *arg){
     case 42: b->trc = -1; break;
     default: break;
   }
-  return (block_type_t) atoi(arg);
+  return;
 }
 
 /**
@@ -745,7 +749,7 @@ static point_t *intersection_arc_line(block_t *b_arc, block_t *b_line, point_t c
   // LEFT  TRC (-1)  | r + r_tool  | r + r_tool  
   
   // get new radius and set it
-  temp_radius = (b_arc->type == ARC_CCW) ? (b_arc->trc + b_arc->trc * tool_radius) : (b_arc->trc - b_arc->trc * tool_radius);
+  temp_radius = (b_arc->type == ARC_CCW) ? (b_arc->r + b_arc->trc * tool_radius) : (b_arc->r - b_arc->trc * tool_radius);
 
   if(change_radius)
     b_arc->r = temp_radius;
@@ -757,9 +761,9 @@ static point_t *intersection_arc_line(block_t *b_arc, block_t *b_line, point_t c
     point_set_x(p1, x1);
     point_set_x(p2, x1);
 
-    // y = yc +- sqrt(r - (x-xc)^2)
-    y1 = point_y(center_point) + sqrt(temp_radius - pow(x1 - point_x(center_point),2));
-    y2 = point_y(center_point) - sqrt(temp_radius - pow(x1 - point_x(center_point),2));
+    // y = yc +- sqrt(r^2 - (x-xc)^2)
+    y1 = point_y(center_point) + sqrt(pow(temp_radius,2) - pow(x1 - point_x(center_point),2));
+    y2 = point_y(center_point) - sqrt(pow(temp_radius,2) - pow(x1 - point_x(center_point),2));
 
     point_set_y(p1, y1);
     point_set_y(p2, y2);
@@ -999,7 +1003,7 @@ int main(int argc, char const *argv[]) {
 #endif
 
 //test vertical blocks
-#if 1
+#if 0
 int main(int argc, char const *argv[]) {
   machine_t *m = machine_new(argv[1]);
   block_t *b1 = NULL, *b2 = NULL, *b3 = NULL, *b4 = NULL, *b5 =NULL, *b6 = NULL;
@@ -1075,6 +1079,60 @@ int main(int argc, char const *argv[]) {
   block_print(b2, stderr);
   block_print(b3, stderr);
   block_print(b4, stderr);
+
+  wprintf("Intepolation of block 20 (duration: %f)\n", block_dt(b2));
+  {
+    data_t t = 0, tq = machine_tq(m), dt = block_dt(b2);
+    data_t lambda = 0, v = 0;
+    printf("t lambda v x y z\n");
+    for (t = 0; t - dt <= tq/10.0; t += tq) {
+      lambda = block_lambda(b2, t, &v);
+      block_interpolate(b2, lambda);
+      printf("%f %f %f %.3f %.3f %.3f\n", t, lambda, v, 
+        point_x(machine_setpoint(m)),
+        point_y(machine_setpoint(m)),
+        point_z(machine_setpoint(m)));
+    }
+  }
+
+  block_free(b1);
+  block_free(b2);
+  block_free(b3);
+  block_free(b4);
+  machine_free(m);
+  return 0;
+}
+#endif
+
+// test arc
+#if 1
+int main(int argc, char const *argv[]) {
+  machine_t *m = machine_new(argv[1]);
+  block_t *b1 = NULL, *b2 = NULL, *b3 = NULL, *b4 = NULL, *b5 =NULL, *b6 = NULL;
+  if (!m) {
+    eprintf("Error creating machine\n");
+    exit(EXIT_FAILURE);
+  }
+
+  b1 = block_new("N10 G41 x5 Z0 T1", NULL, m);
+  block_parse(b1);
+  b2 = block_new("N20 G01 x10 f200", b1, m);
+  block_parse(b2);
+  b3 = block_new("N30 g03 x20 y10 r10 f2000 s5000", b2, m);
+  block_parse(b3);
+  b4 = block_new("N40 g01 y40", b3, m);
+  block_parse(b4);
+  b5 = block_new("N50 g01 x0", b4, m);
+  block_parse(b5);
+  b6 = block_new("N60 g40 y0", b5, m);
+  block_parse(b6);
+
+  block_print(b1, stderr);
+  block_print(b2, stderr);
+  block_print(b3, stderr);
+  block_print(b4, stderr);
+  block_print(b5, stderr);
+  block_print(b6, stderr);
 
   wprintf("Intepolation of block 20 (duration: %f)\n", block_dt(b2));
   {
