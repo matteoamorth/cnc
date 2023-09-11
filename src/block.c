@@ -356,7 +356,7 @@ int block_parse(block_t *b) {
 
   // if we have a G40 block we need to fix the initial point with the previous target point
 
-  point_set_xyz(block_initial_point(b), point_x(start_point(b)), point_y(start_point(b)), point_z(start_point(b)));
+  //point_set_xyz(block_initial_point(b), point_x(start_point(b)), point_y(start_point(b)), point_z(start_point(b)));
 
   #endif
 

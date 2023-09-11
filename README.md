@@ -144,6 +144,10 @@ static int block_eq_sign(point_t *from, point_t *to, data_t const trc){
   point_t *p_dist = point_new();
   point_delta(from, to, p_dist);
 
+  //z must be ignored
+
+  point_set_z(p_dist, 0);
+
   if((point_x(p_dist) > 0) && (point_y(p_dist) >= 0)) return -trc;
   if((point_x(p_dist) <= 0) && (point_y(p_dist) >= 0)) return trc;
   if((point_x(p_dist) >= 0) && (point_y(p_dist) <  0)) return -trc;
@@ -204,7 +208,7 @@ In the circle block the program must evaluate if the radius must be increased or
 The operation can be performed with this line:
 
 ```c
-temp_radius = (b_arc->type == ARC_CCW) ? (b_arc->trc + b_arc->trc * tool_radius) : (b_arc->trc - b_arc->trc * tool_radius);
+temp_radius = (b_arc->type == ARC_CCW) ? (b_arc->r + b_arc->trc * tool_radius) : (b_arc->r - b_arc->trc * tool_radius);
 ```
 
 ### Mathematical problem definition - arc and line intersection 
