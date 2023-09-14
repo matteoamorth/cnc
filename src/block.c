@@ -215,7 +215,7 @@ int block_parse(block_t *b) {
 
   #if TRC_FEATURE
   if(b->prev)
-  if((block_trc(b->prev) == 1) || (block_trc(b->prev) == -1)){
+  if(block_trc(b->prev) != 0){
     point_t *p_new_target = point_new();
     
     switch (block_type(b->prev)) {
@@ -228,6 +228,11 @@ int block_parse(block_t *b) {
         if ((block_type(b) == LINE) || (block_type(b) == RAPID) || (block_type(b) == TRC_OFF)){
 
           // find intersection point and set as new target point of prevoius block
+
+          //exception for G40 block
+          if (block_type(b) == TRC_OFF) 
+            b->trc = b->prev->trc;
+            
           p_new_target = intersection_line_line (b->prev, b);
           point_clone(p_new_target, block_target(b->prev));
 
@@ -242,8 +247,11 @@ int block_parse(block_t *b) {
           //compute block after changes
           block_compute(b->prev);
 
-          if (block_type(b) == TRC_OFF)
+          // restore trc value
+          if (block_type(b) == TRC_OFF){
+            b->trc = 0;
             point_clone(start_point(b),block_initial_point(b));
+          }
 
           break;
         }
@@ -283,6 +291,10 @@ int block_parse(block_t *b) {
         // arc -> line / rapid
         if((block_type(b) == LINE) || (block_type(b) == RAPID) || (block_type(b) == TRC_OFF)){
           
+          //exception for G40 block
+          if (block_type(b) == TRC_OFF) 
+            b->trc = b->prev->trc;
+
           // find intersection point and set it as new target point
           p_new_target = intersection_arc_line(b->prev, b, block_target(b->prev), true);
           point_clone(p_new_target, block_target(b->prev));
@@ -297,11 +309,13 @@ int block_parse(block_t *b) {
           }
 
           b->prev->arc_feedrate = MIN( b->prev->feedrate, pow(3.0 / 4.0 * pow(machine_A(b->prev->machine), 2) * pow(b->prev->r, 2), 0.25) * 60);
-          if (block_arc(b->prev)) {
-            wprintf("Could not calculate arc coordinates\n");
-            rv++;
-            return rv;
+          
+          // restore trc value
+          if (block_type(b) == TRC_OFF){
+            b->trc = 0;
+            point_clone(start_point(b),block_initial_point(b));
           }
+          
           return rv;
         }
       
@@ -371,7 +385,7 @@ int block_parse(block_t *b) {
   case ARC_CW:
   case ARC_CCW:
      if (block_arc(b)) {
-      wprintf("Could not calculate arc coordinatesddddddddddddddddddddddd\n");
+      wprintf("Could not calculate arc coordinates\n");
       rv++;
       break;
     }
@@ -694,7 +708,7 @@ static int block_eq_sign(point_t *from, point_t *to, data_t const trc){
   point_t *p_dist = point_new();
   point_delta(from, to, p_dist);
 
-  //z must be ignored
+  // z must be ignored
 
   point_set_z(p_dist, 0);
 
