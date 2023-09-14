@@ -315,7 +315,7 @@ int block_parse(block_t *b) {
             b->trc = 0;
             point_clone(start_point(b),block_initial_point(b));
           }
-          
+
           return rv;
         }
       
@@ -900,10 +900,6 @@ static point_t *intersection_line_line(block_t *b_line1, block_t *b_line2){
   point_set_xyz(p_new_target, x, y, point_z(block_target(b_line1)));
   return p_new_target;
 }
-
-//static data_t block_angle_with_prev(){
-//  return 1.0;
-//}
 
 #endif
 
