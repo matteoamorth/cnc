@@ -307,9 +307,15 @@ int block_parse(block_t *b) {
             rv++;
             return rv;
           }
-
+          point_delta(b->prev->initial_point,b->prev->target,b->prev->delta);
           b->prev->arc_feedrate = MIN( b->prev->feedrate, pow(3.0 / 4.0 * pow(machine_A(b->prev->machine), 2) * pow(b->prev->r, 2), 0.25) * 60);
+          if (block_arc(b->prev)) {
+            wprintf("Could not calculate arc coordinates\n");
+            rv++;
+            return rv;
+          }
           
+          block_compute(b->prev);
           // restore trc value
           if (block_type(b) == TRC_OFF){
             b->trc = 0;
@@ -1118,24 +1124,30 @@ int main(int argc, char const *argv[]) {
 #if 1
 int main(int argc, char const *argv[]) {
   machine_t *m = machine_new(argv[1]);
-  block_t *b1 = NULL, *b2 = NULL, *b3 = NULL, *b4 = NULL, *b5 =NULL, *b6 = NULL;
+  block_t *b0 = NULL, *b1 = NULL, *b2 = NULL, *b3 = NULL, *b4 = NULL, *b5 =NULL, *b6 = NULL, *b7 = NULL, *b8 = NULL, *b9 = NULL;
   if (!m) {
     eprintf("Error creating machine\n");
     exit(EXIT_FAILURE);
   }
-
-  b1 = block_new("N10 G41 x5 Z0 T1", NULL, m);
+  
+  b1 = block_new("N10 G41 x40 z500 t1 s5000", NULL, m);
   block_parse(b1);
-  b2 = block_new("N20 G01 x10 f200", b1, m);
+  b2 = block_new("N20 g01 x60 y20", b1, m);
   block_parse(b2);
-  b3 = block_new("N30 g03 x20 y10 r10 f2000 s5000", b2, m);
+  b3 = block_new("N30 g01 y30", b2, m);
   block_parse(b3);
-  b4 = block_new("N40 g01 y40", b3, m);
+  b4 = block_new("N40 g03 x40 y50 I-20 j0 F1000", b3, m);
   block_parse(b4);
-  b5 = block_new("N50 g01 x0", b4, m);
+  b5 = block_new("N50 G01 x0 F3000", b4, m);
   block_parse(b5);
-  b6 = block_new("N60 g40 y0", b5, m);
+  b6 = block_new("N60 g01 y40", b5, m);
   block_parse(b6);
+  b7 = block_new("N70 g03 y10 I0 j-15", b6, m);
+  block_parse(b7);
+  b8 = block_new("N80 g01 y-10", b7, m);
+  block_parse(b8);
+  b9 = block_new("N60 g40 z200", b8, m);
+  block_parse(b9);
 
   block_print(b1, stderr);
   block_print(b2, stderr);
@@ -1143,6 +1155,9 @@ int main(int argc, char const *argv[]) {
   block_print(b4, stderr);
   block_print(b5, stderr);
   block_print(b6, stderr);
+  block_print(b7, stderr);
+  block_print(b8, stderr);
+  block_print(b9, stderr);
 
   wprintf("Intepolation of block 20 (duration: %f)\n", block_dt(b2));
   {

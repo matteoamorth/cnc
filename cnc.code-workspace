@@ -77,7 +77,7 @@
         "request": "launch",
         "name": "ccnc",
         "program": "${workspaceFolder}/build/ccnc",
-        "args": ["testTrc.gcode", "machine.ini"],
+        "args": ["test.gcode", "machine.ini"],
         "cwd": "${workspaceFolder}"
       }
     ],
